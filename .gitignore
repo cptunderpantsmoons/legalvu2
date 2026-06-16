@@ -1,0 +1,7 @@
+/node_modules
+.venv
+data
+*.db
+.env
+.vite
+__pycache__
