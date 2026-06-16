@@ -1,6 +1,7 @@
 -- Legal Workspace Database Schema
 -- Created: 2026-06-16
 -- Target: better-sqlite3
+-- All timestamps are Unix epoch MILLISECONDS (Date.now()).
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -9,7 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'legal',
   password_hash TEXT NOT NULL,
   ai_api_key_encrypted TEXT,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS contracts (
@@ -22,9 +23,10 @@ CREATE TABLE IF NOT EXISTS contracts (
   metadata TEXT,
   ai_prompt_version TEXT,
   ai_model TEXT,
+  ai_tokens_used INTEGER,
   created_by TEXT NOT NULL REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -36,8 +38,8 @@ CREATE TABLE IF NOT EXISTS documents (
   sp_sync_status TEXT NOT NULL DEFAULT 'unsynced' CHECK(sp_sync_status IN ('unsynced', 'downloaded', 'uploaded', 'synced')),
   size_bytes INTEGER,
   contract_id TEXT REFERENCES contracts(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS templates (
@@ -49,7 +51,7 @@ CREATE TABLE IF NOT EXISTS templates (
   file_path TEXT NOT NULL,
   is_default INTEGER NOT NULL DEFAULT 0,
   created_by TEXT REFERENCES users(id),
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS sharepoint_connections (
@@ -61,8 +63,8 @@ CREATE TABLE IF NOT EXISTS sharepoint_connections (
   sp_cookies_encrypted TEXT,
   last_error TEXT,
   last_sync_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -72,7 +74,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   entity_type TEXT NOT NULL,
   entity_id TEXT,
   details TEXT,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 CREATE TABLE IF NOT EXISTS sync_queue (
@@ -82,8 +84,8 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
   error_message TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')
-));
+  created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+);
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
@@ -93,3 +95,11 @@ CREATE INDEX IF NOT EXISTS idx_documents_sp_status ON documents(sp_sync_status);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status);
+
+CREATE TABLE IF NOT EXISTS settings (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+  PRIMARY KEY (user_id, key)
+);

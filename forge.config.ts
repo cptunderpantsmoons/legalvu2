@@ -4,11 +4,29 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 
 const config: ForgeConfig = {
-  packagerConfig: {},
+  packagerConfig: {
+    name: 'LegalVu',
+    executableName: 'LegalVu',
+    icon: undefined,
+    asar: true,
+    extraResource: [],
+    win32metadata: {
+      CompanyName: 'LegalVu',
+      ProductName: 'LegalVu - Legal Workspace',
+      FileDescription: 'AI-powered legal workspace for contract lifecycle management',
+      OriginalFilename: 'LegalVu.exe',
+    },
+  },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
-    new MakerZIP({}, ['darwin']),
+    new MakerSquirrel({
+      name: 'LegalVu',
+      setupExe: 'LegalVuSetup.exe',
+      title: 'LegalVu',
+      authors: 'LegalVu',
+      description: 'AI-powered legal workspace for contract lifecycle management',
+    }),
+    new MakerZIP({}, ['darwin', 'win32']),
   ],
   plugins: [
     new VitePlugin({

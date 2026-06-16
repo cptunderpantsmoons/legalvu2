@@ -1,12 +1,24 @@
 import React from 'react';
+import { useAuth } from './hooks/useAuth';
+import { LoginPage } from './components/auth/LoginPage';
+import { AppShell } from './components/layout/AppShell';
 
 function App() {
-  return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <h1 className="text-2xl font-bold mb-4">Legal Workspace</h1>
-      <p className="text-gray-600">AI contract drafting and SharePoint integration</p>
-    </div>
-  );
+  const { user, loading, logout } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <p className="text-white text-lg">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return <AppShell userEmail={user.email} onLogout={logout} />;
 }
 
 export default App;
