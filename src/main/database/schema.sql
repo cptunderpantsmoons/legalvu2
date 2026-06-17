@@ -84,12 +84,15 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
   error_message TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  file_name TEXT,
   created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000)
 );
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
 CREATE INDEX IF NOT EXISTS idx_contracts_created_by ON contracts(created_by);
+CREATE INDEX IF NOT EXISTS idx_contracts_updated_at ON contracts(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_contract_id ON documents(contract_id);
 CREATE INDEX IF NOT EXISTS idx_documents_sp_status ON documents(sp_sync_status);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);

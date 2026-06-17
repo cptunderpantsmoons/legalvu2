@@ -24,8 +24,7 @@ export function encryptSecret(plaintext: string): string {
   if (storage && storage.isEncryptionAvailable()) {
     return storage.encryptString(plaintext).toString('base64');
   }
-  // Fallback for test environments without OS keychain
-  return Buffer.from(plaintext).toString('base64');
+  throw new Error('OS encryption (safeStorage) is not available. Cannot store secrets securely.');
 }
 
 export function decryptSecret(ciphertext: string): string {
@@ -33,8 +32,7 @@ export function decryptSecret(ciphertext: string): string {
   if (storage && storage.isEncryptionAvailable()) {
     return storage.decryptString(Buffer.from(ciphertext, 'base64'));
   }
-  // Fallback for test environments
-  return Buffer.from(ciphertext, 'base64').toString('utf8');
+  throw new Error('OS encryption (safeStorage) is not available. Cannot store secrets securely.');
 }
 
 export function setSafeStorageForTesting(mock: typeof safeStorage): void {

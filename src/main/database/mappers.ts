@@ -1,10 +1,14 @@
-import type { Contract, User, AuditLog, DocumentRecord, ContractStatus, SyncStatus } from '../../shared/types';
+import type { Contract, User, AuditLog, DocumentRecord, ContractStatus, SyncStatus, Template } from '../../shared/types';
+import { AppError } from '../errors';
 
 interface DbRow {
   [key: string]: unknown;
 }
 
 export function rowToContract(row: DbRow): Contract {
+  if (row.id == null) throw new AppError('rowToContract: missing required field "id"', 'VALIDATION_ERROR');
+  if (row.title == null) throw new AppError('rowToContract: missing required field "title"', 'VALIDATION_ERROR');
+  if (row.status == null) throw new AppError('rowToContract: missing required field "status"', 'VALIDATION_ERROR');
   return {
     id: row.id as string,
     title: row.title as string,
@@ -23,6 +27,8 @@ export function rowToContract(row: DbRow): Contract {
 }
 
 export function rowToUser(row: DbRow): User {
+  if (row.id == null) throw new AppError('rowToUser: missing required field "id"', 'VALIDATION_ERROR');
+  if (row.email == null) throw new AppError('rowToUser: missing required field "email"', 'VALIDATION_ERROR');
   return {
     id: row.id as string,
     email: row.email as string,
@@ -58,5 +64,22 @@ export function rowToDocument(row: DbRow): DocumentRecord {
     contractId: (row.contract_id as string) ?? undefined,
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
+  };
+}
+
+export function rowToTemplate(row: DbRow): Template {
+  if (row.id == null) throw new AppError('rowToTemplate: missing required field "id"', 'VALIDATION_ERROR');
+  if (row.name == null) throw new AppError('rowToTemplate: missing required field "name"', 'VALIDATION_ERROR');
+  if (row.file_path == null) throw new AppError('rowToTemplate: missing required field "file_path"', 'VALIDATION_ERROR');
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    description: (row.description as string) ?? undefined,
+    contractType: (row.contract_type as string) ?? undefined,
+    variableSchema: (row.variable_schema as string) ?? undefined,
+    filePath: row.file_path as string,
+    isDefault: Boolean(row.is_default),
+    createdBy: (row.created_by as string) ?? undefined,
+    createdAt: (row.created_at as number) ?? 0,
   };
 }

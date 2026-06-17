@@ -14,13 +14,13 @@ export const ContractPromptInputSchema = z.object({
 
 export const ContractGenerateSchema = z.object({
   provider: AIProviderSchema,
-  model: z.string().min(1),
+  model: z.string().min(1).max(100),
   input: ContractPromptInputSchema,
 });
 
 export const ContractStreamStartSchema = z.object({
   provider: AIProviderSchema,
-  model: z.string().min(1),
+  model: z.string().min(1).max(100),
   input: ContractPromptInputSchema,
 });
 
@@ -30,7 +30,7 @@ export const ContractFetchSchema = z.object({
 
 export const ContractSaveSchema = z.object({
   id: z.string().min(1),
-  content: z.string(),
+  content: z.string().max(500000),
 });
 
 export const ContractTransitionSchema = z.object({
@@ -50,13 +50,13 @@ export const AuthLoginSchema = z.object({
 });
 
 export const SettingsSetAiKeySchema = z.object({
-  apiKey: z.string().min(1),
+  apiKey: z.string().min(1).max(200),
 });
 
 export const SettingsSetAiConfigSchema = z.object({
   provider: AIProviderSchema,
-  model: z.string().min(1),
-  baseUrl: z.string().url().optional().or(z.literal('')),
+  model: z.string().min(1).max(100),
+  baseUrl: z.string().url().optional().or(z.literal('')).refine(url => !url || url.startsWith('https://'), 'baseUrl must use HTTPS'),
 });
 
 export const SpBrowserStartSchema = z.object({
@@ -76,56 +76,56 @@ export const ExportSchema = z.object({
 });
 
 export const AnalyzeSchema = z.object({
-  contractText: z.string().min(10),
+  contractText: z.string().min(10).max(100000),
   clientRole: z.string().optional(),
 });
 
 export const ImportContractSchema = z.object({
   title: z.string().min(1).max(300),
-  content: z.string().min(10),
+  content: z.string().min(10).max(500000),
   counterparty: z.string().optional(),
   jurisdiction: z.string().optional(),
   contractType: z.string().optional(),
 });
 
 export const LawvuImportSchema = z.object({
-  zipBase64: z.string().min(100),
+  zipBase64: z.string().min(100).max(700000000),
 });
 
 export const SummarizeSchema = z.object({
-  contractText: z.string().min(10),
+  contractText: z.string().min(10).max(100000),
 });
 
 export const SpLoginSchema = z.object({
-  siteUrl: z.string().url(),
+  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
 });
 
 export const SpSetConnectionSchema = z.object({
-  siteUrl: z.string().url(),
+  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
   libraryPath: z.string().min(1),
   syncEnabled: z.boolean().optional(),
 });
 
 export const SpBrowseSchema = z.object({
-  siteUrl: z.string().url(),
+  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
   libraryPath: z.string().min(1),
 });
 
 export const SpDownloadSchema = z.object({
-  siteUrl: z.string().url(),
+  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
   fileName: z.string().min(1),
   localDir: z.string().min(1),
 });
 
 export const SpUploadSchema = z.object({
-  siteUrl: z.string().url(),
+  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
   libraryPath: z.string().min(1),
   localFilePath: z.string().min(1),
 });
 
 export const TemplateCreateSchema = z.object({
   name: z.string().min(1).max(200),
-  content: z.string().min(1),
+  content: z.string().min(1).max(500000),
   description: z.string().optional(),
   contractType: z.string().optional(),
 });
@@ -143,5 +143,6 @@ export const TemplateIdSchema = z.object({
 export const AuditQuerySchema = z.object({
   entityType: z.string().optional(),
   entityId: z.string().optional(),
-  limit: z.number().optional(),
+  limit: z.number().optional().max(1000),
+  offset: z.number().optional().min(0),
 });

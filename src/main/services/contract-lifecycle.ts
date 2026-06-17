@@ -1,6 +1,7 @@
 import { getConnection } from '../database/connection';
 import { getContract } from './contract-service';
 import { log } from './audit-service';
+import { rowToContract } from '../database/mappers';
 import type { Contract, ContractStatus } from '../../shared/types';
 
 const ALLOWED_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
@@ -39,17 +40,24 @@ export function transitionStatus(
 
   const db = getConnection();
   const now = Date.now();
-  db.prepare('UPDATE contracts SET status = ?, updated_at = ? WHERE id = ?').run(target, now, contractId);
 
-  log({
-    userId,
-    action: 'contract:transition',
-    entityType: 'contract',
-    entityId: contractId,
-    details: JSON.stringify({ from: contract.status, to: target }),
-  });
+  const updated = db.transaction(() => {
+    db.prepare('UPDATE contracts SET status = ?, updated_at = ? WHERE id = ?').run(target, now, contractId);
 
-  return getContract(contractId)!;
+    log({
+      userId,
+      action: 'contract:transition',
+      entityType: 'contract',
+      entityId: contractId,
+      details: JSON.stringify({ from: contract.status, to: target }),
+    });
+
+    const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(contractId) as Record<string, unknown> | undefined;
+    if (!row) throw new Error('Contract disappeared during transition');
+    return rowToContract(row);
+  })();
+
+  return updated;
 }
 
 export type { ContractStatus };

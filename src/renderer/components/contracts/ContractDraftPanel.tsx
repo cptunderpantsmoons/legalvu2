@@ -21,7 +21,7 @@ export function ContractDraftPanel({ onSaved }: ContractDraftPanelProps) {
     async (input: ContractPromptInput, provider: AIProvider, model: string) => {
       setPhase('streaming');
       const result = await startStream({ provider, model, input });
-      if (!result.error && result.contract) {
+      if (result.contract) {
         setEditContent(result.contract.content || store.streamingContent);
         setPhase('editing');
       } else if (result.error) {

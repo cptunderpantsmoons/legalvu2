@@ -1,5 +1,11 @@
 # LegalVu v2 — Rectification Plan (target: QG3 "AI Drafting Works")
 
+## Update — 2026-06-17: PicoForge Full Upgrade Applied
+
+All items from Batches A through E have been addressed via a full PicoForge 7-agent upgrade. See UPGRADE_SPEC.md for details.
+
+---
+
 Created: 2026-06-16
 Scope: /a0/usr/projects/legalvu_v2 (Electron 33 + React 18 + TS 5.6 + Vite 5 + better-sqlite3 12 + Vitest 4)
 

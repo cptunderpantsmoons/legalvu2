@@ -2,16 +2,13 @@ import { chromium, type BrowserContext, type Page, type Cookie } from 'playwrigh
 import path from 'path';
 import fs from 'fs';
 import { getSelectors, isLoginUrl, type SharePointSelectors } from './sp-selectors';
+import { getDefaultAppPaths } from '../infra/app-paths';
 
 let browserContext: BrowserContext | null = null;
 let activePage: Page | null = null;
 
 function getUserDataDir(): string {
-  try {
-    return require('electron').app.getPath('userData');
-  } catch {
-    return path.join(require('os').tmpdir(), 'legalvu-data');
-  }
+  return getDefaultAppPaths().getUserDataDir();
 }
 
 function getProfileDir(): string {
@@ -74,7 +71,18 @@ export async function navigateBrowser(url: string): Promise<BrowserResult> {
 
 export async function screenshotBrowser(filePath?: string): Promise<{ success: boolean; path?: string; error?: string }> {
   if (!activePage) return { success: false, error: 'Browser not started' };
-  const screenshotPath = filePath || path.join(getUserDataDir(), 'screenshot.png');
+  const userDataDir = getUserDataDir();
+  const screenshotPath = filePath || path.join(userDataDir, 'screenshot.png');
+
+  // Validate that screenshot path is within userData directory
+  if (filePath) {
+    const resolvedPath = path.resolve(filePath);
+    const resolvedUserData = path.resolve(userDataDir);
+    if (!resolvedPath.startsWith(resolvedUserData + path.sep) && resolvedPath !== resolvedUserData) {
+      return { success: false, error: 'Screenshot path must be within the application userData directory' };
+    }
+  }
+
   try {
     await activePage.screenshot({ path: screenshotPath });
     return { success: true, path: screenshotPath };
@@ -229,6 +237,18 @@ export async function downloadSharePointFile(
 ): Promise<DownloadResult> {
   if (!activePage) return { success: false, error: 'Browser not started' };
   const crypto = require('crypto');
+
+  // Validate that localDir is within userData or temp directory
+  const userDataDir = getUserDataDir();
+  const tempDir = getDefaultAppPaths().getTempDir();
+  const resolvedLocalDir = path.resolve(localDir);
+  const resolvedUserData = path.resolve(userDataDir);
+  const resolvedTemp = path.resolve(tempDir);
+  const isWithinUserData = resolvedLocalDir.startsWith(resolvedUserData + path.sep) || resolvedLocalDir === resolvedUserData;
+  const isWithinTemp = resolvedLocalDir.startsWith(resolvedTemp + path.sep) || resolvedLocalDir === resolvedTemp;
+  if (!isWithinUserData && !isWithinTemp) {
+    return { success: false, error: 'Download directory must be within the application userData or system temp directory' };
+  }
 
   try {
     fs.mkdirSync(localDir, { recursive: true });

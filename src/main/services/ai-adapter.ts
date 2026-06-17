@@ -1,5 +1,6 @@
 import type { AIProvider as ProviderName } from '../../shared/types';
 import type { BuiltPrompt } from './prompts';
+import { parseSSEStream } from './sse-parser';
 
 export interface DraftResult {
   content: string;
@@ -130,39 +131,21 @@ export class OpenAIAdapter implements AIProvider {
       let content = '';
       let tokensUsed = 0;
       const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
 
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const payload = trimmed.slice(6);
-          if (payload === '[DONE]') continue;
-          try {
-            const event = JSON.parse(payload) as {
-              choices?: { delta?: { content?: string } }[];
-              usage?: { total_tokens?: number };
-            };
-            const delta = event.choices?.[0]?.delta?.content;
-            if (delta) {
-              content += delta;
-              onChunk(delta);
-            }
-            if (event.usage?.total_tokens) {
-              tokensUsed = event.usage.total_tokens;
-            }
-          } catch {
-            // Skip malformed SSE lines
-          }
+      await parseSSEStream(reader, (event) => {
+        const data = event.data as {
+          choices?: { delta?: { content?: string } }[];
+          usage?: { total_tokens?: number };
+        };
+        const delta = data.choices?.[0]?.delta?.content;
+        if (delta) {
+          content += delta;
+          onChunk(delta);
         }
-      }
+        if (data.usage?.total_tokens) {
+          tokensUsed = data.usage.total_tokens;
+        }
+      });
 
       return { content, tokensUsed };
     }, signal);
@@ -238,37 +221,21 @@ export class AnthropicAdapter implements AIProvider {
       let content = '';
       let tokensUsed = 0;
       const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
 
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          try {
-            const event = JSON.parse(trimmed.slice(6)) as {
-              type: string;
-              delta?: { type?: string; text?: string };
-              message?: { usage?: { input_tokens?: number; output_tokens?: number } };
-            };
-            if (event.type === 'content_block_delta' && event.delta?.text) {
-              content += event.delta.text;
-              onChunk(event.delta.text);
-            }
-            if (event.type === 'message_delta' && event.message?.usage) {
-              tokensUsed = (event.message.usage.input_tokens ?? 0) + (event.message.usage.output_tokens ?? 0);
-            }
-          } catch {
-            // Skip malformed SSE lines
-          }
+      await parseSSEStream(reader, (event) => {
+        const data = event.data as {
+          type: string;
+          delta?: { type?: string; text?: string };
+          message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+        };
+        if (data.type === 'content_block_delta' && data.delta?.text) {
+          content += data.delta.text;
+          onChunk(data.delta.text);
         }
-      }
+        if (data.type === 'message_delta' && data.message?.usage) {
+          tokensUsed = (data.message.usage.input_tokens ?? 0) + (data.message.usage.output_tokens ?? 0);
+        }
+      });
 
       return { content, tokensUsed };
     }, signal);

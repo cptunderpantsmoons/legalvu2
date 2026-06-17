@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, teardownTestDb } from '../database/test-db';
 import { migrate } from '../database/migrations';
 import * as authService from './auth-service';
+import { setSafeStorageForTesting } from '../security/crypto';
 import type { Database as DatabaseType } from 'better-sqlite3';
 
 describe('auth-service', () => {
@@ -10,10 +11,17 @@ describe('auth-service', () => {
   beforeEach(() => {
     db = createTestDb();
     migrate(db);
+    // Mock safeStorage for tests that encrypt/decrypt API keys
+    setSafeStorageForTesting({
+      isEncryptionAvailable: () => true,
+      encryptString: (s: string) => Buffer.from('ENC:' + s),
+      decryptString: (b: Buffer) => b.toString('utf8').slice(4),
+    });
   });
 
   afterEach(() => {
     teardownTestDb();
+    setSafeStorageForTesting(null);
   });
 
   it('register creates a new user and sets current session', () => {
@@ -82,5 +90,47 @@ describe('auth-service', () => {
     expect(config?.provider).toBe('anthropic');
     expect(config?.model).toBe('claude-3-sonnet');
     expect(config?.baseUrl).toBe('https://custom.api.com');
+  });
+
+  it('getCurrentUserId returns null when not authenticated', () => {
+    authService.logout();
+    expect(authService.getCurrentUserId()).toBeNull();
+  });
+
+  it('requireAuth throws when not authenticated', () => {
+    authService.logout();
+    expect(() => authService.requireAuth()).toThrow('Authentication required');
+  });
+
+  it('requireAuth returns userId when authenticated', () => {
+    const user = authService.register('authreq@test.com', 'pass123', 'Auth Req');
+    expect(authService.requireAuth()).toBe(user.id);
+  });
+
+  it('rate limiting locks account after 5 failed attempts', () => {
+    authService.register('locked@test.com', 'correctPass', 'Locked User');
+    authService.logout();
+
+    // 5 failed attempts
+    for (let i = 0; i < 5; i++) {
+      expect(() => authService.login('locked@test.com', 'wrongPassword')).toThrow('Invalid');
+    }
+
+    // 6th attempt should be locked
+    expect(() => authService.login('locked@test.com', 'correctPass')).toThrow('Account locked');
+  });
+
+  it('rate limiting clears on successful login', () => {
+    authService.register('clear@test.com', 'correctPass', 'Clear User');
+    authService.logout();
+
+    // 3 failed attempts (below threshold)
+    for (let i = 0; i < 3; i++) {
+      expect(() => authService.login('clear@test.com', 'wrongPassword')).toThrow('Invalid');
+    }
+
+    // Correct password should still work
+    const user = authService.login('clear@test.com', 'correctPass');
+    expect(user.email).toBe('clear@test.com');
   });
 });

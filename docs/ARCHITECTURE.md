@@ -75,15 +75,15 @@ LegalVu is an Electron desktop application with a three-tier architecture: **mai
 | **Security** | Passwords are never stored in the renderer. Login state is tracked in the main process and exposed via IPC only to the authenticated session. |
 | **Trade-off** | No password reset via email (no SMTP). Reset requires manual admin intervention or a local seed-user workaround. |
 
-### ADR-005: DOCX + PDF Export via docxtemplater and jsPDF
+### ADR-005: DOCX + PDF Export via marked and External Skill Scripts
 **Status:** Accepted
 
 | Aspect | Rationale |
 |---|---|
 | **Requirement** | Generate standard legal documents in .docx and .pdf formats. |
-| **Solution** | `docxtemplater` for Word documents (with `{{variable}}` replacement) and `jsPDF` for PDF export. |
-| **Benefit** | Templates are standard .docx files; legal staff can edit them offline without learning a new format. |
-| **Trade-off** | Complex formatting (tables, headers, footers) requires careful template design; not all DOCX features are supported. |
+| **Solution** | `marked` for markdown parsing (lexing the AI-generated markdown into an AST). DOCX and PDF generation are delegated to external skill scripts invoked via `child_process.execFile` / `child_process.exec`. The `adm-zip` library is used for DOCX (Office Open XML) assembly — programmatically building the .docx zip structure from the parsed markdown AST. PDF generation follows a similar external-script pattern. |
+| **Benefit** | No heavy templating engine dependency (`docxtemplater`/`jsPDF` were dropped). `marked` is lightweight and well-maintained. External scripts keep the main process lean and allow format-specific logic to be swapped independently. `adm-zip` provides direct control over the DOCX XML structure. |
+| **Trade-off** | `child_process.execFile` / `child_process.exec` introduces a process boundary; scripts must be bundled with the app and path-resolved via `app.getAppPath()` in production. Error handling must catch non-zero exit codes. Complex formatting (tables, headers, footers) requires manual XML construction in the script layer. |
 
 ### ADR-006: Vite + Electron Forge for Build
 **Status:** Accepted
@@ -110,9 +110,11 @@ LegalVu is an Electron desktop application with a three-tier architecture: **mai
 | `sharepoint_connections` | SP config + cookie cache | `user_id` UNIQUE (one per user) |
 | `audit_logs` | Immutable event log | `user_id` FK, `timestamp` indexed |
 | `sync_queue` | Background SP sync jobs | `status` CHECK |
+| `schema_version` | Versioned migration tracking | `version` INTEGER |
 
 ### Indexes
 - `contracts(status, updated_at DESC)` for quick status filtering
+- `contracts(updated_at)` for sync diff detection
 - `documents(sha256)` for integrity checking
 - `audit_logs(user_id, created_at DESC)` for per-user audit views
 - `sync_queue(status, created_at ASC)` for job scheduling
@@ -123,16 +125,16 @@ LegalVu is an Electron desktop application with a three-tier architecture: **mai
 
 | Service | Responsibility | IPC Channels |
 |---------|---------------|--------------|
-| `auth-service.ts` | Register, login, logout, session, password hashing, AI key encryption | `AUTH_REGISTER`, `AUTH_LOGIN`, `AUTH_LOGOUT`, `AUTH_GET_USER` |
-| `contract-service.ts` | CRUD, lifecycle transitions, AI generation, export | `CONTRACT_CREATE`, `CONTRACT_GENERATE`, `CONTRACT_EXPORT_DOCX`, `CONTRACT_EXPORT_PDF` |
+| `auth-service.ts` | Register, login, logout, session, password hashing, AI key encryption, rate limiting | `AUTH_REGISTER`, `AUTH_LOGIN`, `AUTH_LOGOUT`, `AUTH_GET_USER` |
+| `contract-service.ts` | CRUD, lifecycle transitions, AI generation, export, pagination | `CONTRACT_CREATE`, `CONTRACT_GENERATE`, `CONTRACT_EXPORT_DOCX`, `CONTRACT_EXPORT_PDF` |
 | `template-service.ts` | Template CRUD, variable extraction, fill | `TEMPLATE_LIST`, `TEMPLATE_GET`, `TEMPLATE_CREATE`, `TEMPLATE_DELETE`, `TEMPLATE_GENERATE` |
-| `document-service.ts` | File attachment, SHA256, SP sync status | Implicit via contract handlers |
-| `sharepoint-service.ts` | Playwright browser manager, SP login, browse, download, upload | `SP_BROWSER_START`, `SP_BROWSER_STOP`, `SP_LOGIN`, `SP_BROWSE`, `SP_DOWNLOAD`, `SP_UPLOAD` |
+| `document-service.ts` | File attachment, SHA256, SP sync status, DOCX/PDF export | Implicit via contract handlers |
+| `sharepoint-service.ts` | Playwright browser manager, SP login, browse, download, upload, path validation | `SP_BROWSER_START`, `SP_BROWSER_STOP`, `SP_LOGIN`, `SP_BROWSE`, `SP_DOWNLOAD`, `SP_UPLOAD` |
 | `sp-connection-service.ts` | Cookie storage, connection configuration | `SP_CHECK_SESSION` |
-| `sync-service.ts` | Diff detection, queue management, sync execution | `SYNC_RUN`, `SYNC_STATUS`, `SYNC_QUEUE` |
-| `audit-service.ts` | Write-only audit log | Internal only (called by other services) |
+| `sync-service.ts` | Diff detection, queue management, sync execution, retry with exponential backoff | `SYNC_RUN`, `SYNC_STATUS`, `SYNC_QUEUE` |
+| `audit-service.ts` | Write-only audit log (service layer), paginated query | Internal only (called by other services) |
 | `analytics-service.ts` | SQL aggregations for dashboard | `ANALYTICS_*` (implied via IPC handlers) |
-| `ai-adapter.ts` | Streaming AI contract generation | Internal only (called by contract-service) |
+| `ai-adapter.ts` | Streaming AI contract generation, SSE parsing utility | Internal only (called by contract-service) |
 | `lawvu-import-service.ts` | Lawvu `.zip` bulk import | `LAWVU_IMPORT`, `LAWVU_IMPORT_STATUS` |
 
 ---
@@ -152,8 +154,17 @@ Components communicate via IPC (no shared state across renderer/main boundaries 
 
 See `SECURITY.md` for the full security model. Key highlights:
 - `sandbox: true`, `nodeIntegration: false`, `contextIsolation: true`
-- All IPC inputs validated with Zod schemas
-- AI API keys encrypted via `safeStorage` (OS keychain)
+- All IPC inputs validated with Zod schemas (including max-length bounds)
+- Auth guards (`requireAuth`) on all IPC handlers
+- AI API keys encrypted via `safeStorage` (OS keychain) — fails hard if unavailable (no base64 fallback)
+- Login rate limiting (5 attempts, 15-min lockout)
+- Prompt injection defenses (delimiter-based isolation in analysis/summarization)
+- HTTPS enforced for AI baseUrl and SharePoint URLs
+- CSP hardened for production (no dev URLs, no unsafe-inline, base-uri, form-action, frame-ancestors)
+- DevTools disabled in production builds
+- Session persistence via encrypted `session.dat` file
+- SQLite backup mechanism on startup
+- Path validation for SharePoint file operations
 - Playwright browser runs with `--no-sandbox` ONLY in dev/Docker; production builds must remove it
 - SQLite file permissions restricted to the OS user
 
@@ -169,7 +180,7 @@ See `SECURITY.md` for the full security model. Key highlights:
 | SP file download | <5s per file | Headless Playwright after cookie cache |
 | Full sync cycle | <30s | Streaming queue processing with batched DB writes |
 | Dashboard render | <500ms | Cached SQL aggregates (no external API calls) |
-| Export (DOCX/PDF) | <3s | Local docxtemplater; no network dependency |
+| Export (DOCX/PDF) | <3s | Local marked + adm-zip; no network dependency |
 
 ---
 
@@ -185,9 +196,14 @@ If the organization later gains SharePoint API access or decides to move to a cl
 
 ## Files
 
-- `src/main/index.ts` — IPC handler registration + window management
+- `src/main/index.ts` — Window management, app lifecycle, IPC handler registration
+- `src/main/ipc/` — Modular IPC handler modules (auth, contracts, templates, sp, audit, analytics, sync, import, export)
 - `src/main/services/` — Domain services
 - `src/main/database/schema.sql` — Full DDL
-- `src/main/database/migrations.ts` — Migration runner
+- `src/main/database/migrations.ts` — Versioned migration runner (schema_version table)
+- `src/main/database/mappers.ts` — Row-to-model mappers with runtime validation
+- `src/main/security/crypto.ts` — safeStorage wrapper (fails hard if unavailable)
+- `src/main/security/password.ts` — bcrypt utilities
+- `src/main/validation/schemas.ts` — Zod input schemas with max-length validation
 - `src/shared/ipc-channels.ts` — IPC constants
 - `src/shared/types.ts` — Shared domain types

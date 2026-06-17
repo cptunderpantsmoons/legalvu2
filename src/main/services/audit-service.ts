@@ -23,6 +23,7 @@ export function query(filter: {
   userId?: string;
   since?: number;
   limit?: number;
+  offset?: number;
 }): AuditLog[] {
   const db = getConnection();
   let sql = 'SELECT * FROM audit_logs WHERE 1=1';
@@ -45,8 +46,9 @@ export function query(filter: {
     params.push(filter.since);
   }
 
-  sql += ' ORDER BY created_at DESC LIMIT ?';
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
   params.push(filter.limit ?? 100);
+  params.push(filter.offset ?? 0);
 
   const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
   return rows.map(rowToAuditLog);

@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import type { Contract, ContractStatus, AIProvider, ContractPromptInput, User } from '../shared/types';
 
+/** Unified API response format used by handlers that were migrated to { ok, data, error }. */
+export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
 export interface AuthResult {
   user: User | null;
   error?: string;
@@ -26,6 +29,17 @@ export interface ContractStreamPayload {
   input: ContractPromptInput;
 }
 
+/** Data shapes returned inside ApiResult for unified handlers */
+export interface ContractGenerateData { contract: Contract }
+export interface ContractTransitionData { contract: Contract }
+export interface ContractImportData { contract: Contract }
+export interface ExportData { path: string }
+export interface AnalyzeData { analysis: string; tokensUsed?: number }
+export interface SummarizeData { summary: string; tokensUsed?: number }
+export interface SyncRunData { downloaded: number; uploaded: number; conflicts: string[]; errors: string[]; totalProcessed: number }
+export interface TemplateCreateData { template: { id: string; name: string } }
+export interface TemplateGenerateData { contract: { id: string; title: string } }
+
 const api = {
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.PING),
 
@@ -43,9 +57,9 @@ const api = {
   settingsGetAiConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_AI_CONFIG) as Promise<AiConfigResponse | null>,
 
   contractGenerate: (payload: ContractGeneratePayload) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_GENERATE, payload) as Promise<{ contract?: Contract; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_GENERATE, payload) as Promise<ApiResult<ContractGenerateData>>,
   contractStreamStart: (payload: ContractStreamPayload) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_STREAM_START, payload) as Promise<{ contract?: Contract; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_STREAM_START, payload) as Promise<ApiResult<ContractGenerateData>>,
   contractStreamCancel: () => ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_STREAM_CANCEL) as Promise<void>,
   contractFetch: (id: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_FETCH, { id }) as Promise<Contract | null>,
@@ -53,18 +67,18 @@ const api = {
   contractSave: (payload: { id: string; content: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_SAVE, payload) as Promise<Contract | null>,
   contractTransition: (payload: { id: string; target: ContractStatus }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_TRANSITION, payload) as Promise<{ contract?: Contract; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_TRANSITION, payload) as Promise<ApiResult<ContractTransitionData>>,
   contractExportDocx: (contractId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_EXPORT_DOCX, { contractId }) as Promise<{ path?: string; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_EXPORT_DOCX, { contractId }) as Promise<ApiResult<ExportData>>,
   contractExportPdf: (contractId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_EXPORT_PDF, { contractId }) as Promise<{ path?: string; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_EXPORT_PDF, { contractId }) as Promise<ApiResult<ExportData>>,
 
   contractAnalyze: (payload: { contractText: string; clientRole?: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_ANALYZE, payload) as Promise<{ analysis?: string; tokensUsed?: number; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_ANALYZE, payload) as Promise<ApiResult<AnalyzeData>>,
   contractSummarize: (payload: { contractText: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_SUMMARIZE, payload) as Promise<{ summary?: string; tokensUsed?: number; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_SUMMARIZE, payload) as Promise<ApiResult<SummarizeData>>,
   contractImport: (payload: { title: string; content: string; counterparty?: string; jurisdiction?: string; contractType?: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_IMPORT, payload) as Promise<{ contract?: Contract; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.CONTRACT_IMPORT, payload) as Promise<ApiResult<ContractImportData>>,
   expertiseList: () =>
     ipcRenderer.invoke(IPC_CHANNELS.EXPERTISE_LIST) as Promise<string[]>,
 
@@ -132,7 +146,7 @@ const api = {
     ipcRenderer.invoke(IPC_CHANNELS.SP_UPLOAD, params) as Promise<{ success: boolean; fileName?: string; error?: string }>,
 
   syncRun: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.SYNC_RUN) as Promise<{ downloaded: number; uploaded: number; conflicts: string[]; errors: string[]; totalProcessed: number }>,
+    ipcRenderer.invoke(IPC_CHANNELS.SYNC_RUN) as Promise<ApiResult<SyncRunData>>,
   syncStatus: () =>
     ipcRenderer.invoke(IPC_CHANNELS.SYNC_STATUS) as Promise<{ pending: number }>,
   syncQueue: () =>
@@ -143,11 +157,11 @@ const api = {
   templateGet: (templateId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.TEMPLATE_GET, { templateId }) as Promise<{ id: string; name: string; variables: string[]; content: string } | null>,
   templateCreate: (payload: { name: string; content: string; description?: string; contractType?: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.TEMPLATE_CREATE, payload) as Promise<{ template?: { id: string; name: string }; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.TEMPLATE_CREATE, payload) as Promise<ApiResult<TemplateCreateData>>,
   templateDelete: (templateId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.TEMPLATE_DELETE, { templateId }) as Promise<{ ok: boolean; error?: string }>,
   templateGenerate: (payload: { templateId: string; variables: Record<string, string>; title: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.TEMPLATE_GENERATE, payload) as Promise<{ contract?: { id: string; title: string }; error?: string }>,
+    ipcRenderer.invoke(IPC_CHANNELS.TEMPLATE_GENERATE, payload) as Promise<ApiResult<TemplateGenerateData>>,
 
   auditQuery: (filter?: { entityType?: string; entityId?: string; limit?: number }) =>
     ipcRenderer.invoke(IPC_CHANNELS.AUDIT_QUERY, filter ?? {}),

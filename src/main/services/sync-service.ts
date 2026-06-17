@@ -4,6 +4,7 @@ import fs from 'fs';
 import { getConnection } from '../database/connection';
 import { rowToDocument } from '../database/mappers';
 import { log } from './audit-service';
+import { getDefaultAppPaths } from '../infra/app-paths';
 import * as spConnection from './sp-connection-service';
 import {
   browseSharePointLibrary,
@@ -21,6 +22,7 @@ export interface SyncQueueItem {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   errorMessage?: string;
   attempts: number;
+  fileName?: string | null;
 }
 
 export interface SyncResult {
@@ -31,18 +33,17 @@ export interface SyncResult {
   totalProcessed: number;
 }
 
+const MAX_ATTEMPTS = 5;
+
 function getLocalDir(): string {
-  try {
-    const userData = require('electron').app.getPath('userData');
-    return path.join(userData, 'documents');
-  } catch {
-    return path.join(require('os').tmpdir(), 'legalvu-data', 'documents');
-  }
+  return getDefaultAppPaths().getDocumentsDir();
 }
 
 export function getPendingQueue(): SyncQueueItem[] {
   const db = getConnection();
-  const rows = db.prepare('SELECT * FROM sync_queue WHERE status IN (?, ?) ORDER BY created_at ASC').all('pending', 'failed') as Record<string, unknown>[];
+  const rows = db
+    .prepare('SELECT * FROM sync_queue WHERE status IN (?, ?) AND attempts < ? ORDER BY created_at ASC')
+    .all('pending', 'failed', MAX_ATTEMPTS) as Record<string, unknown>[];
   return rows.map((r) => ({
     id: r.id as number,
     documentId: (r.document_id as string) ?? null,
@@ -50,14 +51,15 @@ export function getPendingQueue(): SyncQueueItem[] {
     status: r.status as SyncQueueItem['status'],
     errorMessage: (r.error_message as string) ?? undefined,
     attempts: r.attempts as number,
+    fileName: (r.file_name as string) ?? null,
   }));
 }
 
-export function queueOperation(documentId: string | null, operation: 'upload' | 'download'): void {
+export function queueOperation(documentId: string | null, operation: 'upload' | 'download', fileName?: string): void {
   const db = getConnection();
   db.prepare(
-    `INSERT INTO sync_queue (document_id, operation, status) VALUES (?, ?, 'pending')`,
-  ).run(documentId, operation);
+    `INSERT INTO sync_queue (document_id, operation, status, file_name) VALUES (?, ?, 'pending', ?)`,
+  ).run(documentId, operation, fileName ?? null);
 }
 
 function updateQueueItem(id: number, status: SyncQueueItem['status'], errorMessage?: string): void {
@@ -105,6 +107,17 @@ function updateDocumentSyncStatus(docId: string, status: string, spUrl?: string)
   );
 }
 
+/**
+ * Parse a SharePoint modified timestamp string into epoch milliseconds.
+ * SharePoint displays dates in various locale-dependent formats; we try
+ * Date.parse and fall back to NaN so the comparison is skipped.
+ */
+function parseSpModified(modified?: string): number {
+  if (!modified) return NaN;
+  const ts = Date.parse(modified);
+  return isNaN(ts) ? NaN : ts;
+}
+
 export async function detectSyncDiff(userId: string, siteUrl: string, libraryPath: string): Promise<{ toDownload: SpFileEntry[]; toUpload: DocumentRecord[]; conflicts: string[] }> {
   const stored = spConnection.loadCookies(userId);
   if (stored) await restoreCookies(stored);
@@ -125,11 +138,31 @@ export async function detectSyncDiff(userId: string, siteUrl: string, libraryPat
   const toUpload = localDocs.filter((d) => d.spSyncStatus === 'unsynced' || !spFileNames.has(d.filename));
   const conflicts: string[] = [];
 
+  const now = Date.now();
+  const TWENTY_FOUR_HOURS = 86_400_000;
+
   for (const spFile of spFiles) {
     const local = localSynced.find((d) => d.filename === spFile.name);
-    if (local && local.updatedAt > Date.now() - 86_400_000) {
-      const localStats = fs.statSync(local.localPath).mtimeMs;
-      if (Math.abs(localStats - Date.now()) < 86_400_000) {
+    if (!local) continue;
+
+    // Get local file mtime
+    let localMtime: number;
+    try {
+      localMtime = fs.statSync(local.localPath).mtimeMs;
+    } catch {
+      continue;
+    }
+
+    // Get SharePoint modified timestamp
+    const spModified = parseSpModified(spFile.modified);
+
+    // Only flag as conflict if BOTH were modified recently (within 24h)
+    const localModifiedRecently = (now - localMtime) < TWENTY_FOUR_HOURS;
+    const spModifiedRecently = !isNaN(spModified) && (now - spModified) < TWENTY_FOUR_HOURS;
+
+    if (localModifiedRecently && spModifiedRecently) {
+      // Timestamps differ significantly (more than 60 seconds apart)
+      if (Math.abs(localMtime - spModified) > 60_000) {
         conflicts.push(spFile.name);
       }
     }
@@ -146,9 +179,10 @@ export async function queueSyncOperations(userId: string, siteUrl: string, libra
   for (const file of toDownload) {
     const existing = getLocalDocumentByName(file.name);
     if (!existing) {
+      // Store the file name so processSyncQueue can download the specific file
       db.prepare(
-        `INSERT INTO sync_queue (document_id, operation, status) VALUES (NULL, 'download', 'pending')`,
-      ).run();
+        `INSERT INTO sync_queue (document_id, operation, status, file_name) VALUES (NULL, 'download', 'pending', ?)`,
+      ).run(file.name);
     }
   }
 
@@ -183,25 +217,45 @@ export async function processSyncQueue(userId: string, siteUrl: string, libraryP
   if (stored) await restoreCookies(stored);
 
   for (const item of queue) {
+    // Exponential backoff for retried (failed) items
+    if (item.status === 'failed' && item.attempts > 0) {
+      const backoffMs = 1000 * Math.pow(2, item.attempts);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+
     updateQueueItem(item.id, 'processing');
     try {
       if (item.operation === 'download') {
-        const browseResult = await browseSharePointLibrary(siteUrl, libraryPath);
-        if (!browseResult.success) {
-          markQueueFailed(item.id, browseResult.error || 'Browse failed');
-          result.errors.push(`Browse failed: ${browseResult.error}`);
-          continue;
-        }
-
-        const spFiles = (browseResult.files || []).filter((f) => !f.isFolder);
-        for (const file of spFiles) {
-          if (getLocalDocumentByName(file.name)) continue;
-          const dlResult = await downloadSharePointFile(siteUrl, file.name, localDir);
+        if (item.fileName) {
+          // Download the specific file tracked in the queue item
+          const dlResult = await downloadSharePointFile(siteUrl, item.fileName, localDir);
           if (dlResult.success && dlResult.localPath && dlResult.sha256) {
-            insertDownloadedDocument(file.name, dlResult.localPath, dlResult.sha256, file.url || siteUrl);
+            insertDownloadedDocument(item.fileName, dlResult.localPath, dlResult.sha256, siteUrl);
             result.downloaded++;
           } else {
-            result.errors.push(`Download failed: ${file.name}`);
+            markQueueFailed(item.id, dlResult.error || 'Download failed');
+            result.errors.push(`Download failed: ${item.fileName}`);
+            continue;
+          }
+        } else {
+          // Fallback: no file_name stored — browse and download all missing files
+          const browseResult = await browseSharePointLibrary(siteUrl, libraryPath);
+          if (!browseResult.success) {
+            markQueueFailed(item.id, browseResult.error || 'Browse failed');
+            result.errors.push(`Browse failed: ${browseResult.error}`);
+            continue;
+          }
+
+          const spFiles = (browseResult.files || []).filter((f) => !f.isFolder);
+          for (const file of spFiles) {
+            if (getLocalDocumentByName(file.name)) continue;
+            const dlResult = await downloadSharePointFile(siteUrl, file.name, localDir);
+            if (dlResult.success && dlResult.localPath && dlResult.sha256) {
+              insertDownloadedDocument(file.name, dlResult.localPath, dlResult.sha256, file.url || siteUrl);
+              result.downloaded++;
+            } else {
+              result.errors.push(`Download failed: ${file.name}`);
+            }
           }
         }
         markQueueCompleted(item.id);

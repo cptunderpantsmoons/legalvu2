@@ -33,11 +33,14 @@ export function useAiStream() {
       store.setError(null);
 
       const result = await window.electronAPI.contractStreamStart(payload);
-      if (result.error) {
+      if (!result.ok) {
         store.setStreamingActive(false);
         store.setError(result.error);
+        return { contract: null, error: result.error };
       }
-      return result;
+      // On success, the contract was already streamed and sent via AI_STREAM_DONE event.
+      // The data field contains { contract }.
+      return { contract: result.data.contract, error: null as string | null };
     },
     [],
   );

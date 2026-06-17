@@ -5,6 +5,7 @@ import fs from 'fs';
 import { getConnection } from '../database/connection';
 import { log } from './audit-service';
 import { hashPassword } from '../security/password';
+import { getAppPaths } from '../infra/app-paths';
 import {
   parseTabDelimited,
   mapLawvuStatus,
@@ -99,11 +100,7 @@ function getOrCreateUser(email: string, fullName: string): { id: string; created
 }
 
 function getUserDataDir(): string {
-  try {
-    return require('electron').app.getPath('userData');
-  } catch {
-    return path.join(require('os').tmpdir(), 'legalvu-data');
-  }
+  return getAppPaths().getUserDataDir();
 }
 
 function findExistingByLawvuId(lawvuId: string): string | null {

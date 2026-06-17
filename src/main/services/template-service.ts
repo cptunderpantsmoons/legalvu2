@@ -3,17 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import { getConnection } from '../database/connection';
 import { log } from './audit-service';
+import { rowToTemplate } from '../database/mappers';
 import { DEFAULT_TEMPLATES, extractVariables, fillTemplate } from '../data/default-templates';
-
-export interface Template {
-  id: string;
-  name: string;
-  description?: string;
-  contractType?: string;
-  variableSchema?: string;
-  filePath: string;
-  isDefault: boolean;
-}
+import { getDefaultAppPaths } from '../infra/app-paths';
+import type { Template } from '../../shared/types';
 
 export interface TemplateWithVariables extends Template {
   variables: string[];
@@ -21,15 +14,9 @@ export interface TemplateWithVariables extends Template {
 }
 
 function getTemplateDir(): string {
-  try {
-    const dir = path.join(require('electron').app.getPath('userData'), 'templates');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    return dir;
-  } catch {
-    const dir = path.join(require('os').tmpdir(), 'legalvu-data', 'templates');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    return dir;
-  }
+  const dir = getDefaultAppPaths().getTemplatesDir();
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 export function seedDefaultTemplates(userId: string): void {
@@ -59,15 +46,7 @@ export function seedDefaultTemplates(userId: string): void {
 export function listTemplates(): Template[] {
   const db = getConnection();
   const rows = db.prepare('SELECT * FROM templates ORDER BY is_default DESC, name ASC').all() as Record<string, unknown>[];
-  return rows.map((r) => ({
-    id: r.id as string,
-    name: r.name as string,
-    description: (r.description as string) ?? undefined,
-    contractType: (r.contract_type as string) ?? undefined,
-    variableSchema: (r.variable_schema as string) ?? undefined,
-    filePath: r.file_path as string,
-    isDefault: Boolean(r.is_default),
-  }));
+  return rows.map(rowToTemplate);
 }
 
 export function getTemplate(id: string): TemplateWithVariables | undefined {
@@ -75,17 +54,12 @@ export function getTemplate(id: string): TemplateWithVariables | undefined {
   const row = db.prepare('SELECT * FROM templates WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   if (!row) return undefined;
 
-  const content = fs.existsSync(row.file_path as string) ? fs.readFileSync(row.file_path as string, 'utf8') : '';
-  const variables = row.variable_schema ? JSON.parse(row.variable_schema as string) as string[] : extractVariables(content);
+  const base = rowToTemplate(row);
+  const content = fs.existsSync(base.filePath) ? fs.readFileSync(base.filePath, 'utf8') : '';
+  const variables = base.variableSchema ? JSON.parse(base.variableSchema) as string[] : extractVariables(content);
 
   return {
-    id: row.id as string,
-    name: row.name as string,
-    description: (row.description as string) ?? undefined,
-    contractType: (row.contract_type as string) ?? undefined,
-    variableSchema: row.variable_schema as string,
-    filePath: row.file_path as string,
-    isDefault: Boolean(row.is_default),
+    ...base,
     variables,
     content,
   };
@@ -122,6 +96,8 @@ export function createCustomTemplate(
     variableSchema: JSON.stringify(variables),
     filePath,
     isDefault: false,
+    createdBy: userId,
+    createdAt: Date.now(),
   };
 }
 
@@ -150,27 +126,29 @@ export function generateContractFromTemplate(
   const id = crypto.randomUUID();
   const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO contracts (id, title, status, content, metadata, ai_prompt_version, created_by, created_at, updated_at)
-     VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    title,
-    filledContent,
-    JSON.stringify({ templateId, templateName: template.name, variables }),
-    'template-based',
-    userId,
-    now,
-    now,
-  );
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO contracts (id, title, status, content, metadata, ai_prompt_version, created_by, created_at, updated_at)
+       VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      title,
+      filledContent,
+      JSON.stringify({ templateId, templateName: template.name, variables }),
+      'template-based',
+      userId,
+      now,
+      now,
+    );
 
-  log({
-    userId,
-    action: 'contract:create',
-    entityType: 'contract',
-    entityId: id,
-    details: JSON.stringify({ source: 'template', templateName: template.name }),
-  });
+    log({
+      userId,
+      action: 'contract:create',
+      entityType: 'contract',
+      entityId: id,
+      details: JSON.stringify({ source: 'template', templateName: template.name }),
+    });
+  })();
 
   return id;
 }

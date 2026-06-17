@@ -49,10 +49,10 @@ export function ContractDetailPage({ contract, onBack }: ContractDetailPageProps
 
   const handleTransition = async (target: ContractStatus) => {
     const result = await window.electronAPI.contractTransition({ id: contract.id, target });
-    if (result.contract) {
-      setCurrentStatus(result.contract.status);
+    if (result.ok) {
+      setCurrentStatus(result.data.contract.status);
       setMessage({ type: 'success', text: `Status changed to ${target}.` });
-    } else if (result.error) {
+    } else {
       setMessage({ type: 'error', text: result.error });
     }
   };
@@ -62,8 +62,8 @@ export function ContractDetailPage({ contract, onBack }: ContractDetailPageProps
     setMessage(null);
     const result = await window.electronAPI.contractExportDocx(contract.id);
     setExporting(null);
-    if (result.path) setMessage({ type: 'success', text: `DOCX exported: ${result.path}` });
-    else if (result.error) setMessage({ type: 'error', text: result.error });
+    if (result.ok) setMessage({ type: 'success', text: `DOCX exported: ${result.data.path}` });
+    else setMessage({ type: 'error', text: result.error });
   };
 
   const handleExportPdf = async () => {
@@ -71,8 +71,8 @@ export function ContractDetailPage({ contract, onBack }: ContractDetailPageProps
     setMessage(null);
     const result = await window.electronAPI.contractExportPdf(contract.id);
     setExporting(null);
-    if (result.path) setMessage({ type: 'success', text: `PDF exported: ${result.path}` });
-    else if (result.error) setMessage({ type: 'error', text: result.error });
+    if (result.ok) setMessage({ type: 'success', text: `PDF exported: ${result.data.path}` });
+    else setMessage({ type: 'error', text: result.error });
   };
 
   const nextTransitions = NEXT_TRANSITIONS[currentStatus] || [];
@@ -83,9 +83,9 @@ export function ContractDetailPage({ contract, onBack }: ContractDetailPageProps
     setAnalysisResult(null);
     const result = await window.electronAPI.contractAnalyze({ contractText: content });
     setAiLoading(null);
-    if (result.analysis) {
-      setAnalysisResult(result.analysis);
-      setMessage({ type: 'success', text: `Analysis complete (${result.tokensUsed ?? 0} tokens).` });
+    if (result.ok) {
+      setAnalysisResult(result.data.analysis);
+      setMessage({ type: 'success', text: `Analysis complete (${result.data.tokensUsed ?? 0} tokens).` });
     } else {
       setMessage({ type: 'error', text: result.error || 'Analysis failed.' });
     }
@@ -97,9 +97,9 @@ export function ContractDetailPage({ contract, onBack }: ContractDetailPageProps
     setSummaryResult(null);
     const result = await window.electronAPI.contractSummarize({ contractText: content });
     setAiLoading(null);
-    if (result.summary) {
-      setSummaryResult(result.summary);
-      setMessage({ type: 'success', text: `Summary complete (${result.tokensUsed ?? 0} tokens).` });
+    if (result.ok) {
+      setSummaryResult(result.data.summary);
+      setMessage({ type: 'success', text: `Summary complete (${result.data.tokensUsed ?? 0} tokens).` });
     } else {
       setMessage({ type: 'error', text: result.error || 'Summarization failed.' });
     }

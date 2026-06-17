@@ -43,3 +43,27 @@ export function closeConnection(): void {
     _db = null;
   }
 }
+
+/**
+ * Create a backup copy of the SQLite database using better-sqlite3's
+ * native online backup API. This is safe to run while the database
+ * is in use (WAL mode).
+ *
+ * The backup is written to `database.backup.db` in the same directory
+ * as the primary database file.
+ *
+ * @returns The path to the backup file.
+ */
+export async function backupDatabase(): Promise<string> {
+  const db = getConnection();
+  const dbPath = resolveDbPath();
+  const dbDir = path.dirname(dbPath);
+  const backupPath = path.join(dbDir, 'database.backup.db');
+
+  // Ensure the directory exists (it should, but be safe)
+  fs.mkdirSync(dbDir, { recursive: true });
+
+  await db.backup(backupPath);
+  console.log(`[DB] Backup created at ${backupPath}`);
+  return backupPath;
+}

@@ -29,8 +29,12 @@ export function SettingsPage() {
     setLoading(true);
     setMessage(null);
     try {
-      await window.electronAPI.settingsSetAiConfig({ provider, model, baseUrl });
-      setMessage({ type: 'success', text: 'Configuration saved.' });
+      const result = await window.electronAPI.settingsSetAiConfig({ provider, model, baseUrl });
+      if (!result.ok) {
+        setMessage({ type: 'error', text: result.error || 'Failed to save configuration.' });
+      } else {
+        setMessage({ type: 'success', text: 'Configuration saved.' });
+      }
     } catch (err) {
       setMessage({ type: 'error', text: (err as Error).message });
     } finally {
@@ -102,6 +106,9 @@ export function SettingsPage() {
             />
             <p className="text-xs text-gray-400 mt-1">
               Override to use Azure OpenAI, AWS Bedrock, or a self-hosted endpoint.
+            </p>
+            <p className="text-xs text-amber-600 mt-1">
+              ⚠ Must use HTTPS — unencrypted HTTP endpoints will be rejected.
             </p>
           </div>
 

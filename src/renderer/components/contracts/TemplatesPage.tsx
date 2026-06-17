@@ -58,9 +58,9 @@ export function TemplatesPage({ onSelectContract }: { onSelectContract?: (contra
     });
     setLoading(false);
 
-    if (result.contract) {
-      setMessage({ type: 'success', text: `Contract created: ${result.contract.title}` });
-      onSelectContract?.(result.contract.id, result.contract.title);
+    if (result.ok) {
+      setMessage({ type: 'success', text: `Contract created: ${result.data.contract.title}` });
+      onSelectContract?.(result.data.contract.id, result.data.contract.title);
     } else {
       setMessage({ type: 'error', text: result.error || 'Failed to generate.' });
     }

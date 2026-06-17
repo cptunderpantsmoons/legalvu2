@@ -1,7 +1,8 @@
 # LegalVu v2 — AI-Powered Legal Workspace
 
-[![Tests](https://img.shields.io/badge/tests-180%2F180-brightgreen)]()
-[![Lint](https://img.shields.io/badge/lint-passing-brightgreen)]()
+[![CI](https://github.com/cptunderpantsmoons/legalvu2/actions/workflows/ci.yml/badge.svg)](https://github.com/cptunderpantsmoons/legalvu2/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-vitest-brightgreen)]()
+[![Lint](https://img.shields.io/badge/lint-eslint-brightgreen)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
@@ -64,7 +65,7 @@
 | **Build** | Vite (separate configs for main, preload, renderer) | v6 |
 | **Database** | SQLite via better-sqlite3 | v12 |
 | **AI Integration** | OpenAI / Anthropic fetch-based adapters with SSE streaming | — |
-| **Document Export** | docxtemplater + jsPDF (DOCX + PDF) | latest |
+| **Document Export** | marked + adm-zip (DOCX via OOXML zip assembly) + external skill scripts | latest |
 | **SharePoint Automation** | Playwright | latest |
 | **Testing** | Vitest (unit) + Playwright (e2e) | v4 |
 
@@ -141,8 +142,9 @@ npm run make
 ## Project Structure
 
 ```
-/a0/usr/projects/legalvu_v2/
+legalvu2/
 ├── src/main/               # Electron main process (Node.js)
+│   ├── ipc/                # Modular IPC handler modules (auth, contracts, templates, sp, audit, analytics, sync, import, export)
 │   ├── services/           # Domain services (auth, contract, SP, sync, etc.)
 │   ├── database/           # Connection, migrations, mappers, schema.sql
 │   ├── validation/         # Zod schemas for IPC input validation
@@ -156,6 +158,8 @@ npm run make
 │   └── types/               # global.d.ts augmenting window.electronAPI
 ├── src/shared/              # IPC channels enum + shared domain types
 ├── tests/e2e/               # Playwright end-to-end tests
+├── .github/workflows/       # CI (GitHub Actions)
+├── .husky/                  # Pre-commit hooks (husky + lint-staged)
 ├── docs/
 │   ├── API.md               # IPC channel reference
 │   ├── SECURITY.md          # Security & data sovereignty guide
@@ -184,6 +188,22 @@ LegalVu uses Electron's IPC for all communication. No REST, no WebSocket, no rem
 - **Zod** input validation on all IPC channels.
 - **Full audit trail** for every operation.
 
+### Security Hardening
+
+The following security improvements were applied as part of the PicoForge full upgrade (2026-06-17):
+
+- **Auth guards on all IPC handlers** — every handler is wrapped with `requireAuth` middleware; unauthenticated requests are rejected with a typed `AuthError`.
+- **Crypto fails hard** — `safeStorage` is now required; the insecure base64 fallback has been removed. If the OS keychain is unavailable, the app throws rather than storing secrets in plaintext.
+- **Login rate limiting** — 5 failed attempts trigger a 15-minute lockout, mitigating brute-force attacks.
+- **Prompt injection defenses** — AI analysis and summarization wrap user content in delimiter-based isolation and strip control characters.
+- **HTTPS enforcement** — Zod schemas reject non-HTTPS URLs for AI `baseUrl` and SharePoint endpoints.
+- **CSP hardened for production** — no dev URLs, no `unsafe-inline`; `base-uri`, `form-action`, and `frame-ancestors` directives added.
+- **DevTools disabled in production** — `mainWindow.webContents.closeDevTools()` prevents inspection in shipped builds.
+- **Session persistence** — encrypted `session.dat` file survives app restarts; deleted on logout.
+- **SQLite backup** — database is backed up on startup for corruption recovery.
+- **Path validation** — SharePoint file operations validate and sanitize paths to prevent directory traversal.
+- **Max length validation** — all unbounded IPC string inputs are capped to prevent oversized payloads.
+
 **See:** `docs/SECURITY.md` for the complete security model, threat matrix, production hardening checklist, and incident response guide.
 
 ---
@@ -197,6 +217,30 @@ Contributions are welcome. Please follow the existing code style and ensure all 
 3. Run tests and lint: `npm test && npm run lint`
 4. Commit with a descriptive message
 5. Open a Pull Request
+
+### Pre-commit Hooks
+
+This project uses [Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-staged/lint-staged) to enforce code quality before commits:
+
+- **ESLint** — auto-fixes linting issues on staged files
+- **Prettier** — formats staged files
+
+Hooks are installed automatically on `npm install` (via the `prepare` script). To manually set up hooks after cloning:
+
+```bash
+npm run prepare
+```
+
+### Continuous Integration
+
+CI runs on GitHub Actions (`.github/workflows/ci.yml`) on every push and pull request to `main`/`master`:
+
+- **Lint** — `npm run lint` (ESLint, `--max-warnings 0`)
+- **Typecheck** — `npm run typecheck` (tsc `--noEmit`)
+- **Tests** — `npm test -- --coverage` (Vitest with coverage reporting)
+- **E2E** — `xvfb-run npx playwright test` (Playwright end-to-end tests)
+
+Coverage reports are uploaded as build artifacts.
 
 **Before submitting:**
 - [ ] All tests pass (`npm test`)
@@ -217,14 +261,43 @@ Contributions are welcome. Please follow the existing code style and ensure all 
 - Lawvu bulk importer
 - Audit trail with full-search UI
 - Local auth with bcrypt
+- IPC auth guards on all handlers (requireAuth pattern)
+- Login rate limiting (5 attempts, 15-min lockout)
+- Crypto hard-fail (no base64 fallback)
+- Prompt injection defenses for AI analysis/summarization
+- HTTPS enforcement for AI baseUrl and SharePoint URLs
+- CSP hardened for production (base-uri, form-action, frame-ancestors)
+- DevTools disabled in production
+- Session persistence via encrypted session.dat
+- SQLite backup mechanism
+- Path validation for SharePoint operations
+- Max length validation on all IPC inputs
+- Monolithic index.ts extracted into 9 modular IPC handler modules
+- Typed error hierarchy (AppError, ValidationError, NotFoundError, AuthError, ExternalServiceError)
+- Versioned database migrations (schema_version table)
+- Pagination on listContracts() and audit query()
+- Sync queue: stale 'processing' recovery + max retry (5) with exponential backoff
+- GitHub Actions CI (lint, typecheck, test, coverage, e2e)
+- Pre-commit hooks (husky + lint-staged)
+- Code signing configuration in forge.config.ts
+- Dependabot + CODEOWNERS
 
 ### Planned 🚧
+- [ ] Remove `--no-sandbox` from Playwright in production builds
+- [ ] Remove `ELECTRON_DISABLE_SANDBOX=1` from production environment
 - [ ] First-launch onboarding wizard
 - [ ] Full-text search (SQLite FTS5)
 - [ ] Docx template drag-and-drop editor
 - [ ] OAuth2 / Entra ID integration (when admin rights available)
 - [ ] Mobile-responsive web companion
-- [ ] Code signing for Windows/macOS installers
+- [ ] MFA / multi-factor authentication on local login
+- [ ] Password reset workflow (requires SMTP or local admin tool)
+- [ ] AI provider data-residency routing (Azure OpenAI AU East / AWS Bedrock ap-southeast-2)
+- [ ] SQLite database encryption (SQLCipher) for at-rest protection beyond OS disk encryption
+- [ ] Automated dependency vulnerability scanning in CI (npm audit gate)
+- [ ] Certificate pinning for AI API calls
+- [ ] Increase test coverage above 60% threshold
+- [ ] Fuzz testing for IPC handlers
 
 ---
 

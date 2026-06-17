@@ -42,7 +42,7 @@ export function ContractsListPage({ onSelect }: ContractsListPageProps) {
       jurisdiction: importJurisdiction || undefined,
     });
     setImporting(false);
-    if (result.contract) {
+    if (result.ok) {
       setShowImport(false);
       setImportTitle('');
       setImportContent('');

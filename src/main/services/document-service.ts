@@ -8,6 +8,7 @@ import { marked } from 'marked';
 import { getConnection } from '../database/connection';
 import { getContract } from './contract-service';
 import { log } from './audit-service';
+import { getDefaultAppPaths } from '../infra/app-paths';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -119,14 +120,7 @@ export async function exportContractToDocx(contractId: string, userId: string): 
   const contentJsonPath = path.join(tempDir, 'content.json');
   fs.writeFileSync(contentJsonPath, JSON.stringify(blocks));
 
-  const userDataPath = (() => {
-    try {
-      return require('electron').app.getPath('userData');
-    } catch {
-      return path.join(require('os').tmpdir(), 'legalvu-data');
-    }
-  })();
-  const exportDir = path.join(userDataPath, 'documents');
+  const exportDir = getDefaultAppPaths().getExportDir();
   fs.mkdirSync(exportDir, { recursive: true });
   const outputPath = path.join(exportDir, `${contractId}.docx`);
 
@@ -170,14 +164,7 @@ export async function exportContractToPdf(contractId: string, userId: string): P
   const contentJsonPath = path.join(tempDir, 'content.json');
   fs.writeFileSync(contentJsonPath, JSON.stringify(blocks));
 
-  const userDataPath = (() => {
-    try {
-      return require('electron').app.getPath('userData');
-    } catch {
-      return path.join(require('os').tmpdir(), 'legalvu-data');
-    }
-  })();
-  const exportDir = path.join(userDataPath, 'documents');
+  const exportDir = getDefaultAppPaths().getExportDir();
   fs.mkdirSync(exportDir, { recursive: true });
   const outputPath = path.join(exportDir, `${contractId}.pdf`);
 
