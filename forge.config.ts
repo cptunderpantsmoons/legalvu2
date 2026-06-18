@@ -2,27 +2,31 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { VitePlugin } from '@electron-forge/plugin-vite';
+import path from 'path';
 
-// ─── Code Signing Configuration ───────────────────────────────────────────
-// IMPORTANT: Signing certificates and passwords must be provided via
-// environment variables. Do NOT hardcode secrets in this file.
-//
-// macOS:
-//   CSC_NAME          — Common Name of the signing certificate in Keychain
-//   CSC_LINK          — Base64-encoded .p12 certificate (alternative to CSC_NAME)
-//   CSC_KEYCHAIN      — Keychain to search for the certificate
-//   APPLE_ID                  — Apple ID for notarization
-//   APPLE_APP_SPECIFIC_PASSWORD — App-specific password for notarization
-//   APPLE_TEAM_ID             — Developer Team ID for notarization
-//
-// Windows:
-//   WINDOWS_CERT_FILE     — Path to the .pfx certificate file
-//   WINDOWS_CERT_PASSWORD — Password for the certificate file
-//   WINDOWS_SIGN_PARAMS   — Additional signtool.exe parameters (optional)
-// ───────────────────────────────────────────────────────────────────────────
+/**
+ * Code signing configuration:
+ *
+ * Windows: set WINDOWS_CERTIFICATE_PATH and WINDOWS_CERTIFICATE_PASSWORD
+ *           (PFX file). The MakerSquirrel `certificateFile` and
+ *           `certificatePassword` options are used.
+ *
+ * macOS:   set APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID,
+ *           CSC_LINK (p12 base64 or file URL), CSC_KEY_PASSWORD,
+ *           and an entitlements file via OSX_ENTITLEMENTS.
+ */
+const windowsSigning =
+  process.env.WINDOWS_CERTIFICATE_PATH && process.env.WINDOWS_CERTIFICATE_PASSWORD
+    ? {
+        certificateFile: process.env.WINDOWS_CERTIFICATE_PATH,
+        certificatePassword: process.env.WINDOWS_CERTIFICATE_PASSWORD,
+      }
+    : undefined;
 
-const isMacSignEnabled = Boolean(process.env.CSC_NAME || process.env.CSC_LINK);
-const isWinSignEnabled = Boolean(process.env.WINDOWS_CERT_FILE);
+const osxSigning =
+  process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD
+    ? true
+    : undefined;
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -37,22 +41,20 @@ const config: ForgeConfig = {
       FileDescription: 'AI-powered legal workspace for contract lifecycle management',
       OriginalFilename: 'LegalVu.exe',
     },
-    // ── macOS code signing ──
-    osxSign: isMacSignEnabled
-      ? {
-          identity: process.env.CSC_NAME || undefined,
+    osxSign: osxSigning
+      ? ({
+          identity: 'Developer ID Application: LegalVu',
           hardenedRuntime: true,
-          entitlements: 'build/entitlements.mac.plist',
-          'entitlements-inherit': 'build/entitlements.mac.plist',
-          'gatekeeper-assess': false,
-        }
+          entitlements: process.env.OSX_ENTITLEMENTS || path.join(__dirname, 'entitlements.plist'),
+          entitlementsInherit: process.env.OSX_ENTITLEMENTS || path.join(__dirname, 'entitlements.plist'),
+          signatureFlags: 'library',
+        } as any)
       : undefined,
-    // ── Windows code signing (signtool options) ──
-    win32Sign: isWinSignEnabled
+    osxNotarize: process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID
       ? {
-          certificateFile: process.env.WINDOWS_CERT_FILE,
-          certificatePassword: process.env.WINDOWS_CERT_PASSWORD,
-          signWithParams: process.env.WINDOWS_SIGN_PARAMS || undefined,
+          appleId: process.env.APPLE_ID,
+          appleIdPassword: process.env.APPLE_ID_PASSWORD,
+          teamId: process.env.APPLE_TEAM_ID,
         }
       : undefined,
   },
@@ -64,10 +66,7 @@ const config: ForgeConfig = {
       title: 'LegalVu',
       authors: 'LegalVu',
       description: 'AI-powered legal workspace for contract lifecycle management',
-      // Squirrel.Windows signing config — uses the same env vars
-      certificateFile: process.env.WINDOWS_CERT_FILE || undefined,
-      certificatePassword: process.env.WINDOWS_CERT_PASSWORD || undefined,
-      signingHook: undefined,
+      ...(windowsSigning ? { certificateFile: windowsSigning.certificateFile, certificatePassword: windowsSigning.certificatePassword } : {}),
     }),
     new MakerZIP({}, ['darwin', 'win32']),
   ],
