@@ -1,8 +1,5 @@
-/node_modules
-.venv
-data
-*.db
-.env
-.vite
-__pycache__
-.a0proj/
+Nothing should be ignored in this case, as only a markdown file (UI_IMPROVEMENT_PLAN.md) was added, which is a source/config file. No build artifacts, dependencies, or temporary files were included in the changes.
+
+Therefore, the output is empty:
+
+```(empty — output nothing)```
