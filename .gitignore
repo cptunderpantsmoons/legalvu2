@@ -6,3 +6,7 @@ data
 .vite
 __pycache__
 .a0proj/
+
+# Build artifacts
+/out
+/coverage

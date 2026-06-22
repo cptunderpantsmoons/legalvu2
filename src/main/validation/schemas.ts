@@ -1,6 +1,6 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const AIProviderSchema = z.enum(['openai', 'anthropic']);
+export const AIProviderSchema = z.enum(["openai", "anthropic"]);
 
 export const ContractPromptInputSchema = z.object({
   contractType: z.string().min(1).max(2000),
@@ -35,7 +35,20 @@ export const ContractSaveSchema = z.object({
 
 export const ContractTransitionSchema = z.object({
   id: z.string().min(1),
-  target: z.enum(['draft', 'under_review', 'approved', 'signed', 'active', 'expired', 'terminated']),
+  target: z.enum([
+    "draft",
+    "under_review",
+    "approved",
+    "signed",
+    "active",
+    "expired",
+    "terminated",
+  ]),
+});
+
+export const ContractListSchema = z.object({
+  limit: z.number().int().min(1).max(100).optional(),
+  offset: z.number().int().min(0).max(10000).optional(),
 });
 
 export const AuthRegisterSchema = z.object({
@@ -56,7 +69,15 @@ export const SettingsSetAiKeySchema = z.object({
 export const SettingsSetAiConfigSchema = z.object({
   provider: AIProviderSchema,
   model: z.string().min(1).max(100),
-  baseUrl: z.string().url().optional().or(z.literal('')).refine(url => !url || url.startsWith('https://'), 'baseUrl must use HTTPS'),
+  baseUrl: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (url) => !url || url.startsWith("https://"),
+      "baseUrl must use HTTPS",
+    ),
 });
 
 export const SpBrowserStartSchema = z.object({
@@ -64,7 +85,10 @@ export const SpBrowserStartSchema = z.object({
 });
 
 export const SpBrowserNavigateSchema = z.object({
-  url: z.string().url(),
+  url: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "url must use HTTPS"),
 });
 
 export const SpBrowserScreenshotSchema = z.object({
@@ -97,28 +121,43 @@ export const SummarizeSchema = z.object({
 });
 
 export const SpLoginSchema = z.object({
-  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
+  siteUrl: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "siteUrl must use HTTPS"),
 });
 
 export const SpSetConnectionSchema = z.object({
-  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
+  siteUrl: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "siteUrl must use HTTPS"),
   libraryPath: z.string().min(1),
   syncEnabled: z.boolean().optional(),
 });
 
 export const SpBrowseSchema = z.object({
-  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
+  siteUrl: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "siteUrl must use HTTPS"),
   libraryPath: z.string().min(1),
 });
 
 export const SpDownloadSchema = z.object({
-  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
+  siteUrl: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "siteUrl must use HTTPS"),
   fileName: z.string().min(1),
   localDir: z.string().min(1),
 });
 
 export const SpUploadSchema = z.object({
-  siteUrl: z.string().url().refine(url => url.startsWith('https://'), 'siteUrl must use HTTPS'),
+  siteUrl: z
+    .string()
+    .url()
+    .refine((url) => url.startsWith("https://"), "siteUrl must use HTTPS"),
   libraryPath: z.string().min(1),
   localFilePath: z.string().min(1),
 });
@@ -143,6 +182,11 @@ export const TemplateIdSchema = z.object({
 export const AuditQuerySchema = z.object({
   entityType: z.string().optional(),
   entityId: z.string().optional(),
-  limit: z.number().optional().max(1000),
-  offset: z.number().optional().min(0),
+  limit: z.number().int().min(1).max(1000).optional(),
+  offset: z.number().int().min(0).max(1000000).optional(),
+});
+
+export const ContractSearchSchema = z.object({
+  query: z.string().min(1).max(200),
+  limit: z.number().int().min(1).max(100).optional(),
 });

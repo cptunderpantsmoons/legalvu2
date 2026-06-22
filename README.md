@@ -117,6 +117,9 @@ npm install
 ### Development
 ```bash
 # Start the Electron dev server (Vite HMR + auto-reload)
+# ELECTRON_DISABLE_SANDBOX=1 is only needed in headless CI/Docker where the
+# Chromium sandbox cannot run. On a normal desktop with a display server,
+# omit it. Never set this in production.
 ELECTRON_DISABLE_SANDBOX=1 npm run dev
 ```
 
@@ -131,11 +134,30 @@ npx playwright test
 
 ### Production Build
 ```bash
-# Package for current platform
+# Package for current platform (Windows .exe, macOS .zip, Linux .zip)
 npm run make
 
 # Output: /out/make/[platform]/
 ```
+
+#### Linux build note
+
+`electron-forge` on Linux relies on `extract-zip` which can die silently when the
+Chromium sandbox file (`chrome-sandbox`) lacks SUID permissions. If `npm run make`
+exits 0 but produces no `out/` directory, either:
+
+- Install `xvfb-run` and run `xvfb-run npm run make`, or
+- Run `npm run make` as root (so the sandbox can be chmod'd 4755), or
+- Set `ELECTRON_DISABLE_SANDBOX=1` before `npm run make` (dev/CI only).
+
+To run the packaged binary on a desktop Linux machine without SUID setup:
+
+```bash
+./out/LegalVu-linux-x64/LegalVu --no-sandbox
+```
+
+Production deployments should install the sandbox properly: as root,
+`chown root chrome-sandbox && chmod 4755 chrome-sandbox` inside the package dir.
 
 ---
 
@@ -281,12 +303,11 @@ Coverage reports are uploaded as build artifacts.
 - Pre-commit hooks (husky + lint-staged)
 - Code signing configuration in forge.config.ts
 - Dependabot + CODEOWNERS
+- `--no-sandbox` gated behind `LEGALVU_INSECURE_SP=1` env var in Playwright (production passes `args: []`)
+- `ELECTRON_DISABLE_SANDBOX=1` is dev-only (CI/Quick Start); not set in production build paths
 
 ### Planned 🚧
-- [ ] Remove `--no-sandbox` from Playwright in production builds
-- [ ] Remove `ELECTRON_DISABLE_SANDBOX=1` from production environment
 - [ ] First-launch onboarding wizard
-- [ ] Full-text search (SQLite FTS5)
 - [ ] Docx template drag-and-drop editor
 - [ ] OAuth2 / Entra ID integration (when admin rights available)
 - [ ] Mobile-responsive web companion
@@ -294,9 +315,7 @@ Coverage reports are uploaded as build artifacts.
 - [ ] Password reset workflow (requires SMTP or local admin tool)
 - [ ] AI provider data-residency routing (Azure OpenAI AU East / AWS Bedrock ap-southeast-2)
 - [ ] SQLite database encryption (SQLCipher) for at-rest protection beyond OS disk encryption
-- [ ] Automated dependency vulnerability scanning in CI (npm audit gate)
 - [ ] Certificate pinning for AI API calls
-- [ ] Increase test coverage above 60% threshold
 - [ ] Fuzz testing for IPC handlers
 
 ---

@@ -1,10 +1,10 @@
-import { ipcMain } from 'electron';
-import * as authService from '../services/auth-service';
-import * as auditService from '../services/audit-service';
-import * as schemas from '../validation/schemas';
-import { IPC_CHANNELS } from '../../shared/ipc-channels';
-import type { AIProvider } from '../../shared/types';
-import { getCurrentUserId, wrapError } from './types';
+import { ipcMain } from "electron";
+import * as authService from "../services/auth-service";
+import * as auditService from "../services/audit-service";
+import * as schemas from "../validation/schemas";
+import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import type { AIProvider } from "../../shared/types";
+import { getCurrentUserId } from "./types";
 
 /**
  * Register settings IPC handlers.
@@ -15,7 +15,12 @@ export function registerSettingsHandlers(): void {
     const parsed = schemas.SettingsSetAiKeySchema.parse(payload);
     const userId = getCurrentUserId();
     authService.setEncryptedApiKey(userId, parsed.apiKey);
-    auditService.log({ userId, action: 'settings:setAiKey', entityType: 'user', entityId: userId });
+    auditService.log({
+      userId,
+      action: "settings:setAiKey",
+      entityType: "user",
+      entityId: userId,
+    });
     return { ok: true };
   });
 
@@ -27,7 +32,12 @@ export function registerSettingsHandlers(): void {
       model: parsed.model,
       baseUrl: parsed.baseUrl || undefined,
     });
-    auditService.log({ userId, action: 'settings:setAiConfig', entityType: 'user', entityId: userId });
+    auditService.log({
+      userId,
+      action: "settings:setAiConfig",
+      entityType: "user",
+      entityId: userId,
+    });
     return { ok: true };
   });
 

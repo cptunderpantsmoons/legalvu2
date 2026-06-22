@@ -4,6 +4,8 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6am UTC — catches newly-disclosed advisories
 
 jobs:
   lint-typecheck-test:
@@ -25,6 +27,25 @@ jobs:
         with:
           name: coverage
           path: coverage/
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - run: npm ci
+      # Production dependency audit — fails on high or critical vulnerabilities
+      # in runtime dependencies (excludes devDependencies).
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      # TODO: tighten dev-dep audit to --audit-level=high once the existing
+      # 23 high-severity dev vulnerabilities (all in devDependencies like
+      # electron-forge, vite, playwright tooling) are resolved. Tracking
+      # separately. For now, only block CI on critical dev vulnerabilities.
+      - name: Dev dependency audit (critical only)
+        run: npm audit --audit-level=critical
 
   e2e:
     runs-on: ubuntu-latest

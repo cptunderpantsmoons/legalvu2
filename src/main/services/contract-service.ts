@@ -1,15 +1,19 @@
-import crypto from 'crypto';
-import { getConnection } from '../database/connection';
-import { getProvider } from './ai-adapter';
-import { buildContractPrompt, PROMPT_VERSION, type ContractPromptInput } from './prompts';
-import { rowToContract } from '../database/mappers';
-import { log } from './audit-service';
-import { NotFoundError, ExternalServiceError } from '../errors';
-import type { Contract } from '../../shared/types';
+import crypto from "crypto";
+import { getConnection } from "../database/connection";
+import { getProvider } from "./ai-adapter";
+import {
+  buildContractPrompt,
+  PROMPT_VERSION,
+  type ContractPromptInput,
+} from "./prompts";
+import { rowToContract } from "../database/mappers";
+import { log } from "./audit-service";
+import { NotFoundError } from "../errors";
+import type { Contract } from "../../shared/types";
 
 export async function createContractFromPrompt(
   userId: string,
-  provider: 'openai' | 'anthropic',
+  provider: "openai" | "anthropic",
   apiKey: string,
   model: string,
   input: ContractPromptInput,
@@ -31,7 +35,7 @@ export async function createContractFromPrompt(
     ).run(
       id,
       title,
-      'draft',
+      "draft",
       input.counterparty,
       input.jurisdiction,
       result.content,
@@ -44,15 +48,17 @@ export async function createContractFromPrompt(
       now,
     );
 
-    const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) throw new Error('Failed to insert contract');
+    const row = db.prepare("SELECT * FROM contracts WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) throw new Error("Failed to insert contract");
     return rowToContract(row);
   })();
 
   log({
     userId,
-    action: 'contract:create',
-    entityType: 'contract',
+    action: "contract:create",
+    entityType: "contract",
     entityId: contract.id,
     details: JSON.stringify({
       promptVersion: PROMPT_VERSION,
@@ -70,7 +76,7 @@ export async function createContractFromPrompt(
  */
 export function saveContractFromStream(
   userId: string,
-  provider: 'openai' | 'anthropic',
+  provider: "openai" | "anthropic",
   model: string,
   input: ContractPromptInput,
   content: string,
@@ -89,7 +95,7 @@ export function saveContractFromStream(
     ).run(
       id,
       title,
-      'draft',
+      "draft",
       input.counterparty,
       input.jurisdiction,
       content,
@@ -102,15 +108,17 @@ export function saveContractFromStream(
       now,
     );
 
-    const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) throw new Error('Failed to insert contract from stream');
+    const row = db.prepare("SELECT * FROM contracts WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) throw new Error("Failed to insert contract from stream");
     return rowToContract(row);
   })();
 
   log({
     userId,
-    action: 'contract:create',
-    entityType: 'contract',
+    action: "contract:create",
+    entityType: "contract",
     entityId: contract.id,
     details: JSON.stringify({
       promptVersion: PROMPT_VERSION,
@@ -125,26 +133,40 @@ export function saveContractFromStream(
 
 export function getContract(id: string): Contract | undefined {
   const db = getConnection();
-  const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const row = db.prepare("SELECT * FROM contracts WHERE id = ?").get(id) as
+    | Record<string, unknown>
+    | undefined;
   return row ? rowToContract(row) : undefined;
 }
 
-export function listContracts(limit: number = 100, offset: number = 0): Contract[] {
+export function listContracts(
+  limit: number = 100,
+  offset: number = 0,
+): Contract[] {
   const db = getConnection();
-  const rows = db.prepare('SELECT * FROM contracts ORDER BY updated_at DESC LIMIT ? OFFSET ?').all(limit, offset) as Record<string, unknown>[];
+  const rows = db
+    .prepare(
+      "SELECT * FROM contracts ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+    )
+    .all(limit, offset) as Record<string, unknown>[];
   return rows.map(rowToContract);
 }
 
-export function saveContractContent(id: string, content: string): Contract | undefined {
+export function saveContractContent(
+  id: string,
+  content: string,
+): Contract | undefined {
   const db = getConnection();
   const now = Date.now();
-  db.prepare('UPDATE contracts SET content = ?, updated_at = ? WHERE id = ?').run(content, now, id);
+  db.prepare(
+    "UPDATE contracts SET content = ?, updated_at = ? WHERE id = ?",
+  ).run(content, now, id);
   const contract = getContract(id);
   if (contract) {
     log({
       userId: contract.createdBy,
-      action: 'contract:save',
-      entityType: 'contract',
+      action: "contract:save",
+      entityType: "contract",
       entityId: id,
     });
   }
@@ -155,7 +177,11 @@ export function importContract(
   userId: string,
   title: string,
   content: string,
-  metadata?: { counterparty?: string; jurisdiction?: string; contractType?: string },
+  metadata?: {
+    counterparty?: string;
+    jurisdiction?: string;
+    contractType?: string;
+  },
 ): Contract {
   const db = getConnection();
   const id = crypto.randomUUID();
@@ -172,24 +198,95 @@ export function importContract(
       metadata?.counterparty ?? null,
       metadata?.jurisdiction ?? null,
       content,
-      JSON.stringify({ source: 'import', ...metadata }),
+      JSON.stringify({ source: "import", ...metadata }),
       userId,
       now,
       now,
     );
 
-    const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    if (!row) throw new NotFoundError('Failed to import contract');
+    const row = db.prepare("SELECT * FROM contracts WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) throw new NotFoundError("Failed to import contract");
     return rowToContract(row);
   })();
 
   log({
     userId,
-    action: 'contract:import',
-    entityType: 'contract',
+    action: "contract:import",
+    entityType: "contract",
     entityId: contract.id,
     details: JSON.stringify({ title }),
   });
 
   return contract;
+}
+
+/** A single search hit: the matched contract plus a snippet and rank. */
+export interface ContractSearchHit {
+  contract: Contract;
+  snippet: string;
+  rank: number;
+}
+
+/**
+ * Escape a raw user query into a safe FTS5 MATCH expression.
+ *
+ * FTS5 query syntax treats `"`, `*`, `(`, `)`, `:`, and a few other chars
+ * as operators. To avoid FTS5 syntax injection and surprising query failures,
+ * we split on whitespace and quote each token with double quotes. Tokens that
+ * are empty after trimming are dropped.
+ *
+ * Example: `acme "OR" (evil)` -> `"acme" "OR" "evil"`
+ */
+function escapeFtsQuery(raw: string): string {
+  // Replace double-quote inside a token with two double-quotes (FTS5 escape).
+  // Then wrap each whitespace-separated token in double quotes so FTS5 treats
+  // it as a literal phrase rather than an operator.
+  return raw
+    .split(/\s+/)
+    .map((tok) => tok.trim())
+    .filter((tok) => tok.length > 0)
+    .map((tok) => `"${tok.replace(/"/g, '""')}"`)
+    .join(" ");
+}
+
+/**
+ * Full-text search across contracts (title, content, counterparty) using FTS5.
+ *
+ * The query is sanitized via `escapeFtsQuery` to prevent FTS5 syntax injection.
+ * Returns at most `limit` hits ordered by FTS5 rank (relevance). Each hit
+ * includes a snippet of the matched content.
+ *
+ * @param query Raw user query.
+ * @param limit Max results to return (1–100, default 20).
+ */
+export function searchContracts(
+  query: string,
+  limit: number = 20,
+): ContractSearchHit[] {
+  const sanitized = escapeFtsQuery(query);
+  if (!sanitized) return [];
+
+  const db = getConnection();
+  const rows = db
+    .prepare(
+      `SELECT c.*,
+              snippet(contracts_fts, 1, '<mark>', '</mark>', '...', 20) AS snippet,
+              rank
+       FROM contracts_fts fts
+       JOIN contracts c ON c.rowid = fts.rowid
+       WHERE contracts_fts MATCH ?
+       ORDER BY rank
+       LIMIT ?`,
+    )
+    .all(sanitized, Math.max(1, Math.min(100, limit))) as Array<
+    Record<string, unknown>
+  >;
+
+  return rows.map((row) => ({
+    contract: rowToContract(row),
+    snippet: String(row.snippet ?? ""),
+    rank: Number(row.rank ?? 0),
+  }));
 }

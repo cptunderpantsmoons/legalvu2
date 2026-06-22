@@ -68,7 +68,7 @@ const config: ForgeConfig = {
       description: 'AI-powered legal workspace for contract lifecycle management',
       ...(windowsSigning ? { certificateFile: windowsSigning.certificateFile, certificatePassword: windowsSigning.certificatePassword } : {}),
     }),
-    new MakerZIP({}, ['darwin', 'win32']),
+    new MakerZIP({}, ['darwin', 'win32', 'linux']),
   ],
   plugins: [
     new VitePlugin({

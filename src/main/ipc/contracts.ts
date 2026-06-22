@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain } from "electron";
 import {
   createContractFromPrompt,
   getContract,
@@ -6,17 +6,31 @@ import {
   saveContractContent,
   importContract,
   saveContractFromStream,
-} from '../services/contract-service';
-import { getProvider } from '../services/ai-adapter';
-import { buildContractPrompt, buildAnalysisPrompt, buildSummarizationPrompt, PROMPT_VERSION } from '../services/prompts';
-import { transitionStatus } from '../services/contract-lifecycle';
-import { exportContractToDocx, exportContractToPdf } from '../services/document-service';
-import * as authService from '../services/auth-service';
-import * as auditService from '../services/audit-service';
-import * as schemas from '../validation/schemas';
-import { IPC_CHANNELS } from '../../shared/ipc-channels';
-import type { IpcDeps, Result } from './types';
-import { sendToRenderer, getCurrentUserId, wrapError, asyncWrapError } from './types';
+  searchContracts,
+} from "../services/contract-service";
+import { getProvider } from "../services/ai-adapter";
+import {
+  buildContractPrompt,
+  buildAnalysisPrompt,
+  buildSummarizationPrompt,
+  PROMPT_VERSION,
+} from "../services/prompts";
+import { transitionStatus } from "../services/contract-lifecycle";
+import {
+  exportContractToDocx,
+  exportContractToPdf,
+} from "../services/document-service";
+import * as authService from "../services/auth-service";
+import * as auditService from "../services/audit-service";
+import * as schemas from "../validation/schemas";
+import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import type { IpcDeps } from "./types";
+import {
+  sendToRenderer,
+  getCurrentUserId,
+  wrapError,
+  asyncWrapError,
+} from "./types";
 
 /**
  * Register contract, AI streaming, analysis, summarize, and import IPC handlers.
@@ -29,14 +43,24 @@ export function registerContractHandlers(deps: IpcDeps): void {
     const parsed = schemas.ContractGenerateSchema.parse(payload);
     const userId = getCurrentUserId();
     const apiKey = authService.getDecryptedApiKey();
-    if (!apiKey) return { ok: false, error: 'No API key configured. Set your key in Settings.' };
+    if (!apiKey)
+      return {
+        ok: false,
+        error: "No API key configured. Set your key in Settings.",
+      };
 
     const result = await asyncWrapError(async () => {
-      const contract = await createContractFromPrompt(userId, parsed.provider, apiKey, parsed.model, parsed.input);
+      const contract = await createContractFromPrompt(
+        userId,
+        parsed.provider,
+        apiKey,
+        parsed.model,
+        parsed.input,
+      );
       auditService.log({
         userId,
-        action: 'contract:create',
-        entityType: 'contract',
+        action: "contract:create",
+        entityType: "contract",
         entityId: contract.id,
         details: JSON.stringify({
           promptVersion: PROMPT_VERSION,
@@ -46,7 +70,9 @@ export function registerContractHandlers(deps: IpcDeps): void {
       });
       return { contract };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
   });
 
   // --- Contract Streaming (single AI call — no double call) ---
@@ -54,7 +80,11 @@ export function registerContractHandlers(deps: IpcDeps): void {
     const parsed = schemas.ContractStreamStartSchema.parse(payload);
     const userId = getCurrentUserId();
     const apiKey = authService.getDecryptedApiKey();
-    if (!apiKey) return { ok: false, error: 'No API key configured. Set your key in Settings.' };
+    if (!apiKey)
+      return {
+        ok: false,
+        error: "No API key configured. Set your key in Settings.",
+      };
 
     try {
       const config = authService.getAiConfig(userId);
@@ -85,8 +115,8 @@ export function registerContractHandlers(deps: IpcDeps): void {
 
       auditService.log({
         userId,
-        action: 'contract:create',
-        entityType: 'contract',
+        action: "contract:create",
+        entityType: "contract",
         entityId: contract.id,
         details: JSON.stringify({
           promptVersion: PROMPT_VERSION,
@@ -108,6 +138,7 @@ export function registerContractHandlers(deps: IpcDeps): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.CONTRACT_STREAM_CANCEL, () => {
+    getCurrentUserId(); // auth guard
     const controller = deps.getActiveStreamController();
     if (controller) {
       controller.abort();
@@ -117,13 +148,16 @@ export function registerContractHandlers(deps: IpcDeps): void {
 
   // --- Contract CRUD ---
   ipcMain.handle(IPC_CHANNELS.CONTRACT_FETCH, (_e, payload) => {
+    getCurrentUserId(); // auth guard
     const parsed = schemas.ContractFetchSchema.parse(payload);
     return getContract(parsed.id) ?? null;
   });
 
   ipcMain.handle(IPC_CHANNELS.CONTRACT_LIST, (_e, payload) => {
-    const limit = typeof payload?.limit === 'number' ? payload.limit : 100;
-    const offset = typeof payload?.offset === 'number' ? payload.offset : 0;
+    getCurrentUserId(); // auth guard
+    const parsed = payload ? schemas.ContractListSchema.parse(payload) : {};
+    const limit = typeof parsed.limit === "number" ? parsed.limit : 100;
+    const offset = typeof parsed.offset === "number" ? parsed.offset : 0;
     return listContracts(limit, offset);
   });
 
@@ -134,8 +168,8 @@ export function registerContractHandlers(deps: IpcDeps): void {
     if (contract) {
       auditService.log({
         userId,
-        action: 'contract:save',
-        entityType: 'contract',
+        action: "contract:save",
+        entityType: "contract",
         entityId: parsed.id,
       });
     }
@@ -149,7 +183,9 @@ export function registerContractHandlers(deps: IpcDeps): void {
       const contract = transitionStatus(parsed.id, parsed.target, userId);
       return { contract };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
   });
 
   // --- Contract Export ---
@@ -160,7 +196,9 @@ export function registerContractHandlers(deps: IpcDeps): void {
       const filePath = await exportContractToDocx(parsed.contractId, userId);
       return { path: filePath };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
   });
 
   ipcMain.handle(IPC_CHANNELS.CONTRACT_EXPORT_PDF, async (_e, payload) => {
@@ -170,7 +208,9 @@ export function registerContractHandlers(deps: IpcDeps): void {
       const filePath = await exportContractToPdf(parsed.contractId, userId);
       return { path: filePath };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
   });
 
   // --- Contract Import (single contract) ---
@@ -185,14 +225,16 @@ export function registerContractHandlers(deps: IpcDeps): void {
       });
       auditService.log({
         userId,
-        action: 'contract:import',
-        entityType: 'contract',
+        action: "contract:import",
+        entityType: "contract",
         entityId: contract.id,
         details: JSON.stringify({ title: parsed.title }),
       });
       return { contract };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
   });
 
   // --- Contract Analysis ---
@@ -200,24 +242,40 @@ export function registerContractHandlers(deps: IpcDeps): void {
     const parsed = schemas.AnalyzeSchema.parse(payload);
     const userId = getCurrentUserId();
     const apiKey = authService.getDecryptedApiKey();
-    if (!apiKey) return { ok: false, error: 'No API key configured. Set your key in Settings.' };
+    if (!apiKey)
+      return {
+        ok: false,
+        error: "No API key configured. Set your key in Settings.",
+      };
 
     const config = authService.getAiConfig(userId);
     const baseUrl = config?.baseUrl;
-    const ai = getProvider((config?.provider as 'openai' | 'anthropic') ?? 'openai');
+    const ai = getProvider(
+      (config?.provider as "openai" | "anthropic") ?? "openai",
+    );
     const prompt = buildAnalysisPrompt(parsed.contractText, parsed.clientRole);
 
     const result = await asyncWrapError(async () => {
-      const aiResult = await ai.generateDraft(prompt, apiKey, config?.model ?? 'gpt-4', baseUrl);
+      const aiResult = await ai.generateDraft(
+        prompt,
+        apiKey,
+        config?.model ?? "gpt-4",
+        baseUrl,
+      );
       auditService.log({
         userId,
-        action: 'contract:analyze',
-        entityType: 'contract',
-        details: JSON.stringify({ model: config?.model, tokens: aiResult.tokensUsed }),
+        action: "contract:analyze",
+        entityType: "contract",
+        details: JSON.stringify({
+          model: config?.model,
+          tokens: aiResult.tokensUsed,
+        }),
       });
       return { analysis: aiResult.content, tokensUsed: aiResult.tokensUsed };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
   });
 
   // --- Contract Summarize ---
@@ -225,23 +283,48 @@ export function registerContractHandlers(deps: IpcDeps): void {
     const parsed = schemas.SummarizeSchema.parse(payload);
     const userId = getCurrentUserId();
     const apiKey = authService.getDecryptedApiKey();
-    if (!apiKey) return { ok: false, error: 'No API key configured. Set your key in Settings.' };
+    if (!apiKey)
+      return {
+        ok: false,
+        error: "No API key configured. Set your key in Settings.",
+      };
 
     const config = authService.getAiConfig(userId);
     const baseUrl = config?.baseUrl;
-    const ai = getProvider((config?.provider as 'openai' | 'anthropic') ?? 'openai');
+    const ai = getProvider(
+      (config?.provider as "openai" | "anthropic") ?? "openai",
+    );
     const prompt = buildSummarizationPrompt(parsed.contractText);
 
     const result = await asyncWrapError(async () => {
-      const aiResult = await ai.generateDraft(prompt, apiKey, config?.model ?? 'gpt-4', baseUrl);
+      const aiResult = await ai.generateDraft(
+        prompt,
+        apiKey,
+        config?.model ?? "gpt-4",
+        baseUrl,
+      );
       auditService.log({
         userId,
-        action: 'contract:summarize',
-        entityType: 'contract',
-        details: JSON.stringify({ model: config?.model, tokens: aiResult.tokensUsed }),
+        action: "contract:summarize",
+        entityType: "contract",
+        details: JSON.stringify({
+          model: config?.model,
+          tokens: aiResult.tokensUsed,
+        }),
       });
       return { summary: aiResult.content, tokensUsed: aiResult.tokensUsed };
     });
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
+    return result.ok
+      ? { ok: true, data: result.data }
+      : { ok: false, error: result.error };
+  });
+
+  // --- Contract Search (FTS5) ---
+  // Auth-guarded: must be authenticated to search contracts.
+  ipcMain.handle(IPC_CHANNELS.CONTRACT_SEARCH, (_e, payload) => {
+    getCurrentUserId(); // auth guard
+    const parsed = schemas.ContractSearchSchema.parse(payload);
+    const hits = searchContracts(parsed.query, parsed.limit ?? 20);
+    return hits;
   });
 }

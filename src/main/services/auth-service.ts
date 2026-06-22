@@ -1,14 +1,14 @@
-import crypto from 'crypto';
-import path from 'path';
-import fs from 'fs';
-import { getConnection } from '../database/connection';
-import { hashPassword, verifyPassword } from '../security/password';
-import { encryptSecret, decryptSecret } from '../security/crypto';
-import { rowToUser } from '../database/mappers';
-import { log } from './audit-service';
-import { getDefaultAppPaths } from '../infra/app-paths';
-import { AuthError } from '../errors';
-import type { User } from '../../shared/types';
+import crypto from "crypto";
+import path from "path";
+import fs from "fs";
+import { getConnection } from "../database/connection";
+import { hashPassword, verifyPassword } from "../security/password";
+import { encryptSecret, decryptSecret } from "../security/crypto";
+import { rowToUser } from "../database/mappers";
+import { log } from "./audit-service";
+import { getDefaultAppPaths } from "../infra/app-paths";
+import { AuthError } from "../errors";
+import type { User } from "../../shared/types";
 
 let _currentUserId: string | null = null;
 
@@ -16,7 +16,7 @@ let _currentUserId: string | null = null;
 // The session file stores the encrypted user ID so the user stays logged in
 // across app restarts. It is stored in the Electron userData directory.
 
-const SESSION_FILENAME = 'session.dat';
+const SESSION_FILENAME = "session.dat";
 
 function resolveSessionPath(): string {
   return path.join(getDefaultAppPaths().getUserDataDir(), SESSION_FILENAME);
@@ -30,11 +30,11 @@ export function persistSession(userId: string): void {
   try {
     const sessionPath = resolveSessionPath();
     const encrypted = encryptSecret(userId);
-    fs.writeFileSync(sessionPath, encrypted, 'utf-8');
-    console.log('[Auth] Session persisted');
+    fs.writeFileSync(sessionPath, encrypted, "utf-8");
+    console.log("[Auth] Session persisted");
   } catch (err) {
     // Don't throw — session persistence is a convenience, not critical
-    console.warn('[Auth] Failed to persist session:', (err as Error).message);
+    console.warn("[Auth] Failed to persist session:", (err as Error).message);
   }
 }
 
@@ -50,12 +50,12 @@ export function restoreSession(): string | null {
     if (!fs.existsSync(sessionPath)) {
       return null;
     }
-    const encrypted = fs.readFileSync(sessionPath, 'utf-8');
+    const encrypted = fs.readFileSync(sessionPath, "utf-8");
     const userId = decryptSecret(encrypted);
 
     // Validate that the user still exists in the database
     const db = getConnection();
-    const row = db.prepare('SELECT id FROM users WHERE id = ?').get(userId);
+    const row = db.prepare("SELECT id FROM users WHERE id = ?").get(userId);
     if (!row) {
       // User no longer exists — clean up stale session file
       deleteSessionFile();
@@ -63,10 +63,10 @@ export function restoreSession(): string | null {
     }
 
     _currentUserId = userId;
-    console.log('[Auth] Session restored for user:', userId);
+    console.log("[Auth] Session restored for user:", userId);
     return userId;
   } catch (err) {
-    console.warn('[Auth] Failed to restore session:', (err as Error).message);
+    console.warn("[Auth] Failed to restore session:", (err as Error).message);
     return null;
   }
 }
@@ -79,10 +79,13 @@ function deleteSessionFile(): void {
     const sessionPath = resolveSessionPath();
     if (fs.existsSync(sessionPath)) {
       fs.unlinkSync(sessionPath);
-      console.log('[Auth] Session file deleted');
+      console.log("[Auth] Session file deleted");
     }
   } catch (err) {
-    console.warn('[Auth] Failed to delete session file:', (err as Error).message);
+    console.warn(
+      "[Auth] Failed to delete session file:",
+      (err as Error).message,
+    );
   }
 }
 
@@ -148,12 +151,18 @@ function toSafeUser(user: User): SafeUser {
   };
 }
 
-export function register(email: string, password: string, fullName: string): SafeUser {
+export function register(
+  email: string,
+  password: string,
+  fullName: string,
+): SafeUser {
   const db = getConnection();
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const existing = db
+    .prepare("SELECT id FROM users WHERE email = ?")
+    .get(email);
   if (existing) {
-    throw new AuthError('Email already registered');
+    throw new AuthError("Email already registered");
   }
 
   const id = crypto.randomUUID();
@@ -162,9 +171,14 @@ export function register(email: string, password: string, fullName: string): Saf
 
   db.prepare(
     `INSERT INTO users (id, email, full_name, role, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, email, fullName, 'legal', hash, now);
+  ).run(id, email, fullName, "legal", hash, now);
 
-  log({ userId: id, action: 'auth:register', entityType: 'user', entityId: id });
+  log({
+    userId: id,
+    action: "auth:register",
+    entityType: "user",
+    entityId: id,
+  });
 
   _currentUserId = id;
   persistSession(id);
@@ -179,22 +193,31 @@ export function login(email: string, password: string): SafeUser {
     const attempt = failedAttempts.get(email)!;
     const remainingMs = (attempt.lockedUntil ?? 0) - Date.now();
     const remainingMin = Math.ceil(remainingMs / 60000);
-    throw new AuthError(`Account locked due to too many failed attempts. Try again in ${remainingMin} minute(s).`);
+    throw new AuthError(
+      `Account locked due to too many failed attempts. Try again in ${remainingMin} minute(s).`,
+    );
   }
 
-  const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as Record<string, unknown> | undefined;
+  const row = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as
+    | Record<string, unknown>
+    | undefined;
 
   if (!row) {
     recordFailedAttempt(email);
-    log({ userId: 'unknown', action: 'auth:login_failed', entityType: 'user', entityId: email, details: JSON.stringify({ reason: 'user_not_found' }) });
-    throw new AuthError('Invalid email or password');
+    throw new AuthError("Invalid email or password");
   }
 
   const hash = row.password_hash as string;
   if (!hash || !verifyPassword(password, hash)) {
     recordFailedAttempt(email);
-    log({ userId: row.id as string, action: 'auth:login_failed', entityType: 'user', entityId: row.id as string, details: JSON.stringify({ reason: 'invalid_password' }) });
-    throw new AuthError('Invalid email or password');
+    log({
+      userId: row.id as string,
+      action: "auth:login_failed",
+      entityType: "user",
+      entityId: row.id as string,
+      details: JSON.stringify({ reason: "invalid_password" }),
+    });
+    throw new AuthError("Invalid email or password");
   }
 
   // Successful login — clear failed attempts
@@ -206,14 +229,24 @@ export function login(email: string, password: string): SafeUser {
   // Persist session for auto-login on next startup
   persistSession(user.id);
 
-  log({ userId: user.id, action: 'auth:login', entityType: 'user', entityId: user.id });
+  log({
+    userId: user.id,
+    action: "auth:login",
+    entityType: "user",
+    entityId: user.id,
+  });
 
   return toSafeUser(user);
 }
 
 export function logout(): void {
   if (_currentUserId) {
-    log({ userId: _currentUserId, action: 'auth:logout', entityType: 'user', entityId: _currentUserId });
+    log({
+      userId: _currentUserId,
+      action: "auth:logout",
+      entityType: "user",
+      entityId: _currentUserId,
+    });
   }
   _currentUserId = null;
   deleteSessionFile();
@@ -222,7 +255,9 @@ export function logout(): void {
 function getCurrentUserInternal(): User | null {
   if (!_currentUserId) return null;
   const db = getConnection();
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(_currentUserId) as Record<string, unknown> | undefined;
+  const row = db
+    .prepare("SELECT * FROM users WHERE id = ?")
+    .get(_currentUserId) as Record<string, unknown> | undefined;
   return row ? rowToUser(row) : null;
 }
 
@@ -237,7 +272,7 @@ export function getCurrentUserId(): string | null {
 
 export function requireAuth(): string {
   if (!_currentUserId) {
-    throw new AuthError('Authentication required. Please log in.');
+    throw new AuthError("Authentication required. Please log in.");
   }
   return _currentUserId;
 }
@@ -251,10 +286,16 @@ export function getDecryptedApiKey(): string | null {
 export function setEncryptedApiKey(userId: string, plaintextKey: string): void {
   const db = getConnection();
   const encrypted = encryptSecret(plaintextKey);
-  db.prepare('UPDATE users SET ai_api_key_encrypted = ? WHERE id = ?').run(encrypted, userId);
+  db.prepare("UPDATE users SET ai_api_key_encrypted = ? WHERE id = ?").run(
+    encrypted,
+    userId,
+  );
 }
 
-export function setAiConfig(userId: string, config: { provider: string; model: string; baseUrl?: string }): void {
+export function setAiConfig(
+  userId: string,
+  config: { provider: string; model: string; baseUrl?: string },
+): void {
   const db = getConnection();
   db.prepare(
     `INSERT INTO settings (user_id, key, value) VALUES (?, 'ai_config', ?)
@@ -262,11 +303,15 @@ export function setAiConfig(userId: string, config: { provider: string; model: s
   ).run(userId, JSON.stringify(config));
 }
 
-export function getAiConfig(userId: string): { provider: string; model: string; baseUrl?: string } | null {
+export function getAiConfig(
+  userId: string,
+): { provider: string; model: string; baseUrl?: string } | null {
   const db = getConnection();
-  const row = db.prepare(`SELECT value FROM settings WHERE user_id = ? AND key = 'ai_config'`).get(userId) as
-    | { value: string }
-    | undefined;
+  const row = db
+    .prepare(
+      `SELECT value FROM settings WHERE user_id = ? AND key = 'ai_config'`,
+    )
+    .get(userId) as { value: string } | undefined;
   if (!row) return null;
   try {
     return JSON.parse(row.value);

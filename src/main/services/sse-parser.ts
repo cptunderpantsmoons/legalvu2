@@ -24,27 +24,27 @@ export interface SSEEvent {
  * @returns An async function that resolves when the stream is fully consumed.
  */
 export async function parseSSEStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reader: import("stream/web").ReadableStreamDefaultReader<Uint8Array>,
   onEvent: (event: SSEEvent) => void,
 ): Promise<void> {
   const decoder = new TextDecoder();
-  let buffer = '';
+  let buffer = "";
 
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
+    const lines = buffer.split("\n");
     // Keep the last (potentially incomplete) line in the buffer
-    buffer = lines.pop() || '';
+    buffer = lines.pop() || "";
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) continue;
+      if (!trimmed.startsWith("data: ")) continue;
 
       const payload = trimmed.slice(6);
-      if (payload === '[DONE]') continue;
+      if (payload === "[DONE]") continue;
 
       try {
         const data = JSON.parse(payload) as Record<string, unknown>;
@@ -56,9 +56,9 @@ export async function parseSSEStream(
   }
 
   // Flush any remaining buffered content
-  if (buffer.trim().startsWith('data: ')) {
+  if (buffer.trim().startsWith("data: ")) {
     const payload = buffer.trim().slice(6);
-    if (payload && payload !== '[DONE]') {
+    if (payload && payload !== "[DONE]") {
       try {
         const data = JSON.parse(payload) as Record<string, unknown>;
         onEvent({ data, raw: payload });
