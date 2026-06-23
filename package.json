@@ -66,7 +66,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@tiptap/pm": "^3.26.1",
+    "@tiptap/pm": "^3.27.1",
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
     "adm-zip": "^0.5.17",
